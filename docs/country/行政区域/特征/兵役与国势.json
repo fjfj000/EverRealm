@@ -1,0 +1,18 @@
+{
+  "version": 2,
+  "note": "这里设计的是常备兵力。国势会随世界发展变化，不写进各国的常备人数；进入某国势时，在常备之外再加征。中原两国为经武，常备 10%，是十国常备比例的中位数。",
+  "militarization": [
+    {"id": "rest", "name": "息民", "standing": 0.05, "summary": "温和。常备只留看守，生产优先。"},
+    {"id": "hold", "name": "守成", "standing": 0.08, "summary": "维持成法，常备低于中原。"},
+    {"id": "drill", "name": "经武", "standing": 0.10, "summary": "中原的中庸常备，也是十国比例的中位数。"},
+    {"id": "host", "name": "整军", "standing": 0.11, "summary": "以军立国，常备高于中原。"},
+    {"id": "total", "name": "穷兵", "standing": 0.12, "summary": "穷兵。常备达到上限，用来补足地广人稀的兵员。"}
+  ],
+  "states": [
+    {"id": "grow", "name": "生聚", "levy": 0.0, "summary": "极力发展。不额外募兵。"},
+    {"id": "root", "name": "务本", "levy": 0.02, "summary": "以生产为本，薄征乡勇。"},
+    {"id": "ready", "name": "整备", "levy": 0.04, "summary": "军备状态。编练预备兵。"},
+    {"id": "alert", "name": "戒严", "levy": 0.06, "summary": "边境戒严，扩大征发。"},
+    {"id": "war", "name": "征伐", "levy": 0.08, "summary": "战争状态。加征达到上限。"}
+  ]
+}

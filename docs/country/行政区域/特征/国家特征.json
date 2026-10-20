@@ -1,0 +1,139 @@
+{
+  "version": 2,
+  "totalAreaKm2": 9600000,
+  "basePersonsPerKm2": 36,
+  "localArmyCap": 0.4,
+  "localArmyFloor": 0.01,
+  "areaPeakMax": 3,
+  "metricPeakMax": 8,
+  "note": "人口从多到少为南方、中原、东方、北方、西方，南方约为西方的 2 倍。面积从多到少为西方、北方、中原、东方、南方。领土权重合计 438。常备兵力 = 人口 × 兵役比例，不含国势加征。中原常备 10%，是十国中位数。四方综合战力接近，中原略高，与兵种 Q 合计 35 对 38 一致。unitQ 不参与分地。",
+  "blocs": {
+    "南方": "人口最多、土地最少。经济最发达，粮食最多。常备比例低，靠人口把兵员补到与四方相当。",
+    "中原": "文明、均衡、政策中庸。常备约 10%。科技、粮食和文化强，综合战力稍高于四方。",
+    "东方": "人口次于中原。政治最高，制造业最发达。山林丘陵，弓骑与丘阵。",
+    "北方": "土地广大，人口少于东方。英雄最多，城防强，兵多，畜牧业发达。",
+    "西方": "土地最广，人口最少，约为南方的一半。城防最强，常备比例最高，粮食较多。"
+  },
+  "countries": [
+    {
+      "id": "G1", "name": "青岚", "bloc": "东方", "direction": "东方·夷",
+      "trait": "山林步弓、林缘骑射。政治和制造都高，城邑不如中原密。",
+      "territoryWeight": 34, "militarization": "hold", "forts": 2,
+      "popDensity": 1.4, "wealth": 1.05, "grain": 0.85, "culture": 1.35, "make": 2.35, "defense": 0.8, "build": 1.05,
+      "politics": 2.45, "tech": 1.5, "herd": 0.45, "hero": 24,
+      "terrains": ["山林", "山林", "山林", "平原", "丘陵"],
+      "junNames": ["青林", "岚谷", "羽溪", "石涧", "松坂", "雾岭"],
+      "capitalTitle": "岚京", "starTitle": "岚射坞",
+      "starMetrics": ["make", "politics"], "popPeak": 3, "metricPeak": 5, "armyBoost": 1.25,
+      "unitQ": [5, 3, 2, 2, 3, 4, 4, 3, 5, 5, 3, 4]
+    },
+    {
+      "id": "G2", "name": "苍羽", "bloc": "东方", "direction": "东方·夷",
+      "trait": "丘陵步弓、重步和枪阵。东方里更重组织，常备到经武。",
+      "territoryWeight": 32, "militarization": "drill", "forts": 2,
+      "popDensity": 1.32, "wealth": 1.0, "grain": 0.82, "culture": 1.25, "make": 2.15, "defense": 0.9, "build": 1.0,
+      "politics": 2.3, "tech": 1.4, "herd": 0.5, "hero": 22,
+      "terrains": ["丘陵", "丘陵", "山林", "平原", "平原"],
+      "junNames": ["丘门", "苍壁", "羽陵", "石阵", "云梯", "柏原"],
+      "capitalTitle": "丘京", "starTitle": "丘政城",
+      "starMetrics": ["politics", "make"], "popPeak": 3, "metricPeak": 5, "armyBoost": 1.3,
+      "unitQ": [5, 3, 3, 4, 4, 3, 3, 3, 5, 4, 3, 3]
+    },
+    {
+      "id": "G3", "name": "百岭", "bloc": "南方", "direction": "南方·蛮",
+      "trait": "临湖轻步、平原重步、湖弓。南方里更富的一国，常备最轻。",
+      "territoryWeight": 26, "militarization": "rest", "forts": 2,
+      "popDensity": 2.85, "wealth": 2.05, "grain": 1.9, "culture": 1.05, "make": 1.15, "defense": 0.6, "build": 1.2,
+      "politics": 0.95, "tech": 0.9, "herd": 0.8, "hero": 16,
+      "terrains": ["丘陵", "山林", "湖泊", "湖泊", "平原"],
+      "junNames": ["湖阳", "岭南", "稻浦", "渔泽", "碧滩", "桑市"],
+      "capitalTitle": "湖京", "starTitle": "湖市",
+      "starMetrics": ["eco", "grain"], "popPeak": 3, "metricPeak": 6, "armyBoost": 1.05,
+      "unitQ": [5, 3, 5, 5, 4, 3, 3, 2, 4, 3, 3, 3]
+    },
+    {
+      "id": "G4", "name": "炽焰", "bloc": "南方", "direction": "南方·蛮",
+      "trait": "山林火攻、轻步、步投。粮食多，制造让给东方。",
+      "territoryWeight": 22, "militarization": "hold", "forts": 2,
+      "popDensity": 2.55, "wealth": 1.7, "grain": 1.65, "culture": 0.95, "make": 1.25, "defense": 0.65, "build": 1.05,
+      "politics": 0.85, "tech": 0.8, "herd": 0.7, "hero": 18,
+      "terrains": ["山林", "山林", "丘陵", "丘陵", "平原"],
+      "junNames": ["焰山", "赤林", "冶谷", "薪野", "丹丘", "火塘"],
+      "capitalTitle": "焰京", "starTitle": "焰仓",
+      "starMetrics": ["grain", "eco"], "popPeak": 3, "metricPeak": 5, "armyBoost": 1.1,
+      "unitQ": [5, 3, 5, 3, 4, 3, 2, 3, 4, 3, 5, 3]
+    },
+    {
+      "id": "G5", "name": "玄戈", "bloc": "西方", "direction": "西方·戎",
+      "trait": "重步、步投、山林轻步。西方城防的核心，县大兵浓。",
+      "territoryWeight": 58, "militarization": "total", "forts": 3,
+      "popDensity": 0.62, "wealth": 0.72, "grain": 1.5, "culture": 0.65, "make": 0.9, "defense": 2.6, "build": 0.8,
+      "politics": 0.7, "tech": 0.6, "herd": 1.15, "hero": 36,
+      "terrains": ["平原", "山林", "山林", "丘陵", "平原"],
+      "junNames": ["戈原", "陷阵", "铁壁", "石关", "玄林", "戍河"],
+      "capitalTitle": "戈京", "starTitle": "陷阵营",
+      "starMetrics": ["def"], "popPeak": 2, "metricPeak": 6, "armyBoost": 1.8,
+      "unitQ": [4, 4, 4, 5, 3, 3, 3, 3, 3, 3, 5, 3]
+    },
+    {
+      "id": "G6", "name": "昆岳", "bloc": "西方", "direction": "西方·戎",
+      "trait": "特殊骑兵、沙漠骑投、轻骑。人口最稀的一侧，常备比例最高。",
+      "territoryWeight": 68, "militarization": "total", "forts": 3,
+      "popDensity": 0.45, "wealth": 0.65, "grain": 1.4, "culture": 0.6, "make": 0.8, "defense": 2.4, "build": 0.7,
+      "politics": 0.65, "tech": 0.55, "herd": 1.2, "hero": 32,
+      "terrains": ["沙漠", "平原", "草原", "山林", "沙漠"],
+      "junNames": ["昆原", "沙岳", "漠骑", "盐泽", "风口", "石漠"],
+      "capitalTitle": "岳庭", "starTitle": "岳骑原",
+      "starMetrics": ["def", "army"], "popPeak": 2, "metricPeak": 6, "armyBoost": 1.9,
+      "unitQ": [4, 4, 3, 3, 2, 4, 4, 5, 3, 3, 3, 5]
+    },
+    {
+      "id": "G7", "name": "朔风", "bloc": "北方", "direction": "北方·狄",
+      "trait": "沙漠骑射、轻骑、草原重骑。英雄和畜群都集中在风骑营。",
+      "territoryWeight": 56, "militarization": "host", "forts": 3,
+      "popDensity": 0.7, "wealth": 0.6, "grain": 0.5, "culture": 0.55, "make": 0.55, "defense": 1.9, "build": 0.55,
+      "politics": 0.65, "tech": 0.5, "herd": 2.9, "hero": 58,
+      "terrains": ["沙漠", "草原", "沙漠", "草原", "平原"],
+      "junNames": ["朔营", "沙蹄", "旱海", "风堡", "白碛", "孤烟"],
+      "capitalTitle": "风庭", "starTitle": "风骑营",
+      "starMetrics": ["herd", "army"], "popPeak": 2, "metricPeak": 6, "armyBoost": 1.7,
+      "unitQ": [3, 5, 2, 2, 2, 5, 5, 5, 2, 5, 2, 5]
+    },
+    {
+      "id": "G8", "name": "烈庭", "bloc": "北方", "direction": "北方·狄",
+      "trait": "草原重骑、骑射、追击。北方英雄更多的一国，畜牧业最盛。",
+      "territoryWeight": 52, "militarization": "host", "forts": 3,
+      "popDensity": 0.78, "wealth": 0.62, "grain": 0.55, "culture": 0.58, "make": 0.58, "defense": 1.8, "build": 0.58,
+      "politics": 0.68, "tech": 0.52, "herd": 2.7, "hero": 64,
+      "terrains": ["草原", "平原", "草原", "山林", "沙漠"],
+      "junNames": ["草帐", "奔原", "猎川", "长风", "牧野", "庭川"],
+      "capitalTitle": "王庭", "starTitle": "庭帐",
+      "starMetrics": ["herd", "hero"], "popPeak": 2, "metricPeak": 6, "armyBoost": 1.65,
+      "unitQ": [3, 5, 3, 2, 3, 5, 5, 4, 3, 5, 2, 3]
+    },
+    {
+      "id": "G9", "name": "天衡", "bloc": "中原", "direction": "中央·华夏",
+      "trait": "平原枪阵、重步、步弓。文明均衡，常备取各国中位数。",
+      "territoryWeight": 48, "militarization": "drill", "forts": 2,
+      "popDensity": 1.15, "wealth": 1.12, "grain": 1.42, "culture": 2.15, "make": 1.08, "defense": 1.02, "build": 1.35,
+      "politics": 1.35, "tech": 2.25, "herd": 0.65, "hero": 28,
+      "terrains": ["平原", "平原", "平原", "山林", "丘陵"],
+      "junNames": ["天邑", "衡野", "中陆", "稷田", "礼原", "平川"],
+      "capitalTitle": "天京", "starTitle": "衡邑",
+      "starMetrics": ["cul", "tech"], "popPeak": 2, "metricPeak": 4, "armyBoost": 1.15,
+      "unitQ": [4, 5, 4, 4, 5, 4, 4, 3, 4, 4, 3, 3]
+    },
+    {
+      "id": "G10", "name": "昭武", "bloc": "中原", "direction": "中央·华夏",
+      "trait": "平原重步、轻步、重骑。中原里偏武，文化和科技仍保持都邑水准。",
+      "territoryWeight": 42, "militarization": "drill", "forts": 2,
+      "popDensity": 1.08, "wealth": 1.08, "grain": 1.35, "culture": 2.0, "make": 1.12, "defense": 1.08, "build": 1.28,
+      "politics": 1.28, "tech": 2.1, "herd": 0.68, "hero": 26,
+      "terrains": ["平原", "平原", "山林", "丘陵", "湖泊"],
+      "junNames": ["昭原", "武库", "羽林", "仓城", "驿道", "公田"],
+      "capitalTitle": "武京", "starTitle": "武库",
+      "starMetrics": ["cul", "tech"], "popPeak": 2, "metricPeak": 4, "armyBoost": 1.2,
+      "unitQ": [5, 4, 4, 5, 4, 4, 4, 3, 4, 4, 3, 3]
+    }
+  ]
+}

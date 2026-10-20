@@ -1,0 +1,1408 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>沙盒国度 · 行政区划编辑器</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='1.5' y='1.5' width='21' height='21' rx='2' fill='%23f4efe5' stroke='%23b3402a'/%3E%3Cg stroke='%23b3402a' stroke-width='1.4'%3E%3Cpath d='M6 1.5V10M10 1.5V12M14 1.5V9M18 1.5V11'/%3E%3Cpath d='M1.5 6H11M1.5 10H12M1.5 14H10M1.5 18H12'/%3E%3C/g%3E%3Ctext x='12' y='19' font-size='7' fill='%2333303a' text-anchor='middle'%3E郡%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="https://miaoda.feishu.cn/fonts/css2?family=Noto+Serif+SC:wght@600;700;900&family=Noto+Sans+SC:wght@400;500;700&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+:root{
+  --bg:#f4efe5; --panel:#fdfbf6; --panel2:#efe8da; --line:#ddd3bf;
+  --ink:#33303a; --muted:#857b6c; --cinn:#b3402a; --jade:#3f6b52; --gold:#93772f;
+  --font-h:"Noto Serif SC","Songti SC","SimSun",serif;
+  --font-b:"Noto Sans SC","Microsoft YaHei","PingFang SC",sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg);
+  background-image:linear-gradient(rgba(190,178,152,.20) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(190,178,152,.20) 1px,transparent 1px);
+  background-size:34px 34px;
+  color:var(--ink);font-family:var(--font-b);font-size:14px;line-height:1.5;
+}
+.wrap{max-width:1320px;margin:0 auto;padding:16px 16px 60px}
+header{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:12px}
+header h1{font-family:var(--font-h);font-weight:900;font-size:24px;margin:0;letter-spacing:1px}
+header .seal{color:var(--cinn);font-family:var(--font-h);font-weight:700;font-size:14px;border:1px solid var(--cinn);padding:2px 9px;border-radius:3px;letter-spacing:2px}
+header .sub{color:var(--muted);font-size:12px;margin-top:3px}
+/* 页签 */
+.tabnav{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;border-bottom:1px solid var(--line);padding-bottom:10px}
+.tabnav button{background:var(--panel2);color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:8px 18px;font-family:var(--font-b);font-size:13px;cursor:pointer}
+.tabnav button.on{background:var(--cinn);color:#fff;border-color:var(--cinn)}
+.tabnav button:focus-visible{outline:2px solid var(--gold);outline-offset:-2px}
+.tab{display:none}
+.tab.on{display:block}
+/* 总览 */
+.ov-tools{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
+.ov-tools .btn{width:auto;padding:9px 14px;font-size:13px;letter-spacing:1px}
+.ov-tools .btn-ghost{background:var(--panel2);margin-top:0;border:1px solid var(--line)}
+.table-scroll{overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:8px}
+.ov-table{width:100%;border-collapse:collapse;min-width:860px}
+.ov-table th,.ov-table td{border-bottom:1px solid var(--line);padding:7px 6px;font-size:12px;text-align:center;white-space:nowrap;font-variant-numeric:tabular-nums}
+.ov-table th{background:var(--panel2);color:var(--gold);position:sticky;top:0}
+.ov-table td.name{text-align:left;font-weight:700;font-family:var(--font-h)}
+.ov-table tr:hover td{background:#fff}
+.ov-table tr.cur td{background:rgba(179,64,42,.07)}
+/* 通用 */
+.grid{display:grid;grid-template-columns:1fr;gap:16px}
+@media(min-width:1080px){.grid2{grid-template-columns:360px 1fr;align-items:start}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px}
+.panel h2{font-family:var(--font-h);font-size:14px;margin:0 0 12px;color:var(--gold);letter-spacing:1px;display:flex;align-items:center;gap:8px}
+.panel h2::before{content:"";width:6px;height:6px;background:var(--cinn);display:inline-block;transform:rotate(45deg)}
+.field{margin-bottom:13px}
+.field label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px}
+.select,input[type=number]{
+  width:100%;background:#fff;color:var(--ink);border:1px solid var(--line);
+  border-radius:6px;padding:8px 10px;font-family:var(--font-b);font-size:13px
+}
+.seg{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.seg button{flex:1;background:var(--panel2);color:var(--muted);border:0;padding:8px 2px;font-size:12px;cursor:pointer;font-family:var(--font-b)}
+.seg button.on{background:var(--cinn);color:#fff}
+.seg button:focus-visible{outline:2px solid var(--gold);outline-offset:-2px}
+.stepper{display:flex;align-items:center;gap:8px}
+.stepper button{width:40px;height:40px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:6px;font-size:15px;cursor:pointer;font-family:var(--font-b)}
+.stepper span{min-width:44px;text-align:center;font-size:14px}
+.toggle{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px}
+.toggle input{width:16px;height:16px;accent-color:var(--cinn)}
+.btn{padding:12px;border:0;border-radius:7px;cursor:pointer;font-family:var(--font-h);font-size:15px;font-weight:700;letter-spacing:2px;width:100%}
+.btn-primary{background:var(--cinn);color:#fff}
+.btn-ghost{background:var(--panel2);color:var(--ink);border:1px solid var(--line);margin-top:9px;letter-spacing:1px;font-size:13px}
+.btn-sm{width:auto;padding:4px 9px;font-size:12px;letter-spacing:0;border-radius:5px}
+.btn:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.hint{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.5}
+.cards{display:grid;grid-template-columns:repeat(2,1fr);gap:9px;margin-bottom:14px}
+@media(min-width:920px){.cards{grid-template-columns:repeat(4,1fr)}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:11px}
+.card .k{font-size:11px;color:var(--muted)}
+.card .v{font-family:var(--font-h);font-size:20px;font-weight:700;color:var(--gold);margin-top:2px}
+.card .u{font-size:10px;color:var(--muted)}
+.metric-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.mg{display:flex;align-items:center;gap:6px}
+.mg label{font-size:11px;color:var(--muted);min-width:30px}
+.mg input{flex:1;min-width:0;background:#fff;border:1px solid var(--line);border-radius:5px;padding:6px 7px;font-size:12px;color:var(--ink)}
+.chartbox{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:11px;margin-bottom:14px}
+.chartbox h3{font-family:var(--font-h);font-size:14px;margin:0 0 8px}
+#treeChart{width:100%;height:300px}
+/* 行政树 */
+.tree-wrap{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px}
+.tree-tools{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;align-items:center}
+.tree-tools .tt{font-size:12px;color:var(--muted)}
+.node{margin:2px 0}
+.node-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:5px 6px;border-radius:5px;background:#fff;border:1px solid var(--line)}
+.node-head:hover{background:var(--panel2)}
+.tog{width:18px;height:18px;flex:0 0 18px;text-align:center;cursor:pointer;color:var(--cinn);font-size:12px;user-select:none;line-height:18px}
+.tog.leaf{color:var(--muted);cursor:default}
+.nm{font-family:var(--font-h);font-weight:700;font-size:13px;min-width:70px}
+.nm .tag{font-size:10px;font-weight:400;margin-left:4px;padding:0 5px;border-radius:8px}
+.tag.jx{background:rgba(147,119,47,.13);color:var(--gold);border:1px solid var(--gold)}
+.tag.ys{background:rgba(63,107,82,.12);color:var(--jade);border:1px solid var(--jade)}
+.nm-input{width:88px;font-weight:400;font-family:var(--font-b);background:#fff;border:1px solid var(--line);border-radius:4px;padding:2px 5px;font-size:12px;color:var(--ink)}
+.nm-input:focus{outline:none;border-color:var(--cinn)}
+.nm-terr{font-family:var(--font-b);font-size:12px;color:var(--ink);background:#fff;border:1px solid var(--line);border-radius:4px;padding:2px 3px;margin-left:6px}
+.td.terr,.terr{color:var(--jade)}
+.k{display:flex;align-items:center;gap:3px;font-size:11px;color:var(--muted)}
+.k input{width:74px;background:#fff;border:1px solid var(--line);border-radius:4px;padding:3px 5px;font-size:12px;color:var(--ink)}
+.node-body{margin-left:18px;border-left:1px dashed var(--line);padding-left:8px}
+.detail{margin:4px 0 4px 26px}
+.detail-toggle{font-size:11px;color:var(--jade);cursor:pointer;background:none;border:none;font-family:var(--font-b);padding:2px 0}
+.child-tools{margin:4px 0 4px 26px}
+.child-tools .btn-sm{background:var(--panel2);color:var(--ink)}
+.row-actions{display:flex;gap:6px;margin-left:auto}
+/* 全量表格视图 */
+.row-tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.full-table{width:100%;border-collapse:collapse;min-width:1120px}
+.full-table th,.full-table td{border:1px solid var(--line);padding:5px 6px;font-size:11px;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.full-table th{background:var(--panel2);color:var(--gold);position:sticky;top:0;z-index:2}
+.full-table td.c,.full-table th.c{text-align:center}
+.full-table th.sticky,td.sticky{position:sticky;left:0;z-index:3}
+.full-table td.sticky{background:var(--panel)}
+.full-table th.sticky2,td.sticky2{position:sticky;left:64px;z-index:3}
+.full-table td.sticky2{background:var(--panel)}
+.full-table tr:hover td{background:#fff}
+.full-table input{width:100%;min-width:0;border:0;background:transparent;text-align:right;font-size:11px;color:var(--ink);padding:2px}
+.full-table td.name{text-align:left;font-family:var(--font-h);font-weight:700}
+.warn{color:var(--cinn);font-size:11px;margin-top:6px}
+/* 规则表 */
+.rules-edit{width:100%;border-collapse:collapse;table-layout:fixed}
+.rules-edit th,.rules-edit td{border:1px solid var(--line);padding:3px 4px;text-align:center;font-size:11px}
+.rules-edit th{background:var(--panel2);color:var(--gold)}
+.rules-edit th:first-child{width:44px}
+.rules-edit input{width:100%;min-width:0;border:0;background:transparent;text-align:center;font-size:11px;color:var(--ink);padding:2px}
+.rules-edit tr.metric td:first-child{color:var(--ink);font-size:11px;text-align:left;padding-left:6px}
+.notes{color:var(--muted);font-size:12px;line-height:1.7;margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
+.hint-ok{color:var(--jade);font-size:11px;margin-top:5px}
+.hint-err{color:var(--cinn);font-size:11px;margin-top:5px}
+/* 国之宏观：纵向大卡片 */
+.macro-list{display:flex;flex-direction:column;gap:10px}
+.mrow{display:flex;align-items:center;gap:14px;padding:10px 12px;background:#fff;border:1px solid var(--line);border-radius:8px;flex-wrap:wrap}
+.mrow.focus{border-color:var(--cinn);box-shadow:0 0 0 1px var(--cinn)}
+.mname{width:92px;flex:0 0 92px;font-family:var(--font-h);font-weight:700;font-size:14px;color:var(--ink)}
+.mname .munit{display:block;font-family:var(--font-b);font-weight:400;font-size:10px;color:var(--muted);margin-top:1px}
+.mval{flex:1;min-width:130px;font-size:17px;font-weight:700;font-variant-numeric:tabular-nums;text-align:right;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:8px 11px;color:var(--ink)}
+.mval:focus{outline:none;border-color:var(--cinn);background:#fff}
+.mmeta{width:190px;flex:0 0 190px}
+.mbar{height:8px;background:var(--panel2);border-radius:4px;overflow:hidden;margin-bottom:4px}
+.mbar i{display:block;height:100%;background:var(--gold);border-radius:4px}
+.mrow.over .mbar i{background:var(--cinn)}
+.mrank{font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums}
+.mhint{display:block;font-size:10px;color:var(--cinn);margin-top:3px}
+.cmp-row{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+.cmp-name{width:76px;flex:0 0 76px;font-size:12px;color:var(--muted)}
+.cmp-val{width:104px;text-align:right;font-variant-numeric:tabular-nums;font-size:13px;font-weight:700}
+.cmp-bar{flex:1;height:9px;background:var(--panel2);border-radius:4px;overflow:hidden}
+.cmp-bar i{display:block;height:100%;background:var(--jade);border-radius:4px}
+@media(max-width:560px){.mname{width:70px;flex-basis:70px}.mmeta{flex-basis:100%;width:100%}}
+@media(max-width:520px){.k input{width:60px}.metric-grid{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="seal">沙盒国度</div>
+  <div>
+    <h1>行政区划编辑器</h1>
+    <p class="hint" style="margin:4px 0 0">正式十国差异数据以特征目录为准，运行工具里的 generate_regions.py 导出。这里重算会按同一套兵役比例生成，明星聚集地以导出的表格为准。</p>
+    <div class="sub">以中国国土 960 万 km² 为蓝本 · 十国并行 · 先编辑国之宏观，再逐级生成、逐级编辑 · 可导入导出</div>
+  </div>
+</header>
+
+<nav class="tabnav" id="tabnav">
+  <button data-tab="overview" class="on">总览</button>
+  <button data-tab="nation">国家与规模</button>
+  <button data-tab="macro">国之宏观</button>
+  <button data-tab="tree">行政树</button>
+  <button data-tab="rules">指标规则</button>
+  <button data-tab="viz">可视化</button>
+</nav>
+
+<!-- ============ Tab 1 · 总览 ============ -->
+<section class="tab on" id="tab-overview">
+  <div class="ov-tools">
+    <button id="genAll" class="btn btn-primary">生成全区划（10 国）</button>
+    <button id="regenCur" class="btn btn-ghost">重算当前国</button>
+    <span class="hint" style="margin:0">当前编辑国：<b id="ovCur" style="color:var(--cinn)"></b></span>
+  </div>
+  <div class="ov-tools">
+    <button id="expExcel" class="btn btn-ghost">导出 Excel</button>
+    <button id="expJson" class="btn btn-ghost">导出 JSON</button>
+    <button id="impExcel" class="btn btn-ghost">导入 Excel</button>
+    <button id="impJson" class="btn btn-ghost">导入 JSON</button>
+    <input type="file" id="fileExcel" accept=".xlsx,.xls" style="display:none">
+    <input type="file" id="fileJson" accept=".json,application/json" style="display:none">
+  </div>
+  <div class="ov-tools">
+    <button id="saveLocal" class="btn btn-ghost">本机保存</button>
+    <button id="loadLocal" class="btn btn-ghost">读取本机</button>
+    <button id="clearLocal" class="btn btn-ghost">清除本机备份</button>
+    <span class="hint" style="margin:0">名称/地形等编辑即时写入数据；点「本机保存」存到当前浏览器（刷新后「读取本机」恢复），「导出 Excel/JSON」可带走数据。</span>
+  </div>
+  <div class="cards" id="cards"></div>
+  <div class="chartbox">
+    <h3>十国概览 · 国土面积与总人口对比</h3>
+    <div id="ovChart" style="width:100%;height:320px"></div>
+  </div>
+  <div class="table-scroll">
+    <table class="ov-table" id="ovTable"></table>
+  </div>
+  <div class="notes" id="notes"></div>
+</section>
+
+<!-- ============ Tab 2 · 国家与规模 ============ -->
+<section class="tab" id="tab-nation">
+  <div class="grid grid2">
+    <aside>
+      <div class="panel">
+        <h2>国家与规模</h2>
+        <div class="field">
+          <label>选择要编辑的国家</label>
+          <select id="country" class="select"></select>
+        </div>
+        <div class="field">
+          <label>国土面积（km²）</label>
+          <div class="seg" id="areaMode">
+            <button data-v="auto" class="on">按领土权重</button>
+            <button data-v="manual">手动输入</button>
+          </div>
+          <input type="number" id="areaInput" min="20000" max="3000000" step="10000" placeholder="如 940000" style="margin-top:7px;display:none">
+        </div>
+        <div class="field">
+          <label>生成规模（影响各级下辖数量，全区划生成时对十国统一生效）</label>
+          <div class="seg" id="scaleMode">
+            <button data-v="lite" class="on">精简</button>
+            <button data-v="std">标准</button>
+            <button data-v="full">完整</button>
+          </div>
+        </div>
+        <div class="field">
+          <label>地形系数（十国统一）</label>
+          <div class="seg" id="fTer">
+            <button data-v="0.8">平原</button><button data-v="1" class="on">丘陵</button><button data-v="1.6">山地</button>
+          </div>
+        </div>
+        <div class="field">
+          <label>京畿 / 要塞</label>
+          <label class="toggle"><input type="checkbox" id="jx" checked> 设立京畿（3–15 县）</label>
+          <label class="toggle" style="margin-top:5px"><input type="checkbox" id="ysOn" checked> 设立要塞</label>
+          <div class="stepper" style="margin-top:7px">
+            <button id="ysMinus" aria-label="减少要塞">减</button>
+            <span id="ysVal">2</span>
+            <button id="ysPlus" aria-label="增加要塞">加</button>
+            <label style="font-size:11px;color:var(--muted)">座要塞 / 国（每座 0.5–1.2 县）</label>
+          </div>
+        </div>
+        <button id="genCountry" class="btn btn-primary" style="margin-top:6px">重算当前国</button>
+        <div class="hint">切换国家后，该国的面积分配方式独立保存；重算当前国仅重建选中国家，不影响其它九国。</div>
+      </div>
+    </aside>
+    <main>
+      <div class="cards" id="cardsNation"></div>
+      <div class="tree-wrap">
+        <div class="tree-tools">
+          <span class="tt">当前国行政结构（只读预览，进入"行政树"页签可逐级编辑）</span>
+          <button id="expandAll" class="btn btn-ghost btn-sm">展开到县</button>
+          <button id="collapseAll" class="btn btn-ghost btn-sm">全部收拢</button>
+          <span class="tt" id="treeCount"></span>
+        </div>
+        <div id="treePrev"></div>
+      </div>
+    </main>
+  </div>
+</section>
+
+<!-- ============ Tab 3 · 国之宏观 ============ -->
+<section class="tab" id="tab-macro">
+  <div class="grid grid2">
+    <aside>
+      <div class="panel">
+        <h2>国之宏观数据</h2>
+        <div class="field">
+          <label>选择要编辑的国家</label>
+          <select id="countryMacro" class="select"></select>
+        </div>
+        <div class="macro-list" id="macroGrid"></div>
+        <button id="genMacro" class="btn btn-primary" style="margin-top:12px">下发并重算该国</button>
+        <div class="hint">国本级指标（核心 9 项 + 已开启的扩展模块）：改数值后点"下发并重算该国"，会按面积占比逐级下发到郡→县→乡→村，每级被夹在该级上下限内（软窗口，冲突自动放宽）。输入框点击进入编辑、失焦恢复千分位显示。</div>
+      </div>
+    </aside>
+    <main>
+      <div class="panel">
+        <h2>当前国已生成值 · 十国对比</h2>
+        <div class="hint" style="margin:0 0 10px">面积由"国家与规模"页签决定；条形表示当前值占十国该指标最大值的比例。</div>
+        <div id="macroCurrent"></div>
+      </div>
+    </main>
+  </div>
+</section>
+
+<!-- ============ Tab 4 · 行政树 ============ -->
+<section class="tab" id="tab-tree">
+  <div class="row-tools">
+    <label style="font-size:12px;color:var(--muted)">编辑国家：</label>
+    <select id="countryTree" class="select" style="width:auto;min-width:200px"></select>
+    <label style="font-size:12px;color:var(--muted)">视图：</label>
+    <div class="seg" id="treeViewMode" style="width:auto">
+      <button data-v="tree" class="on">树形</button>
+      <button data-v="table">全量表格</button>
+    </div>
+    <span class="hint" style="margin:0">树形便于层级编辑；表格可一次看全所有单位的全部指标。</span>
+  </div>
+  <div id="treePane">
+    <div class="tree-wrap">
+      <div class="tree-tools">
+        <span class="tt">行政树（点击名称旁 ▸ 展开/收拢，指标可编辑）</span>
+        <button id="expandAll2" class="btn btn-ghost btn-sm">展开到县</button>
+        <button id="collapseAll2" class="btn btn-ghost btn-sm">全部收拢</button>
+        <span class="tt" id="treeCount2"></span>
+      </div>
+      <div id="tree"></div>
+    </div>
+  </div>
+  <div id="tablePane" style="display:none">
+    <div class="row-tools">
+      <label style="font-size:12px;color:var(--muted)">显示级别：</label>
+      <select id="tableLevel" class="select" style="width:auto">
+        <option value="全部">全部</option>
+        <option value="郡">郡/国</option>
+        <option value="县">县</option>
+        <option value="乡">乡</option>
+        <option value="村">里/村</option>
+        <option value="京畿">京畿</option>
+        <option value="要塞">要塞</option>
+      </select>
+      <span class="hint" style="margin:0">表格支持横向滚动看全部列；左两列冻结。数量过大时会按级别筛选查看。</span>
+    </div>
+    <div class="table-scroll" style="max-height:70vh">
+      <table class="full-table" id="fullTable"></table>
+    </div>
+    <div class="warn" id="tableWarn"></div>
+  </div>
+</section>
+
+<!-- ============ Tab 5 · 指标规则 ============ -->
+<section class="tab" id="tab-rules">
+  <div class="panel">
+    <h2>各级指标上下限（规则表，可编辑）</h2>
+    <div class="row-tools" style="margin-bottom:12px">
+      <span class="tt">扩展指标模块（勾选后进入 规则/行政树/表格/宏观/导入导出）：</span>
+      <label class="toggle" data-extra="mil"><input type="checkbox" id="exMil">军事</label>
+      <label class="toggle" data-extra="eco"><input type="checkbox" id="exEco">经济</label>
+      <label class="toggle" data-extra="civ"><input type="checkbox" id="exCiv">内政</label>
+      <label class="toggle" data-extra="tech"><input type="checkbox" id="exTech">科技</label>
+      <span class="hint" style="margin:0">切换后点「生成全区划」或「重算当前国」下发扩展指标数据。</span>
+    </div>
+    <div class="table-scroll">
+      <table class="rules-edit" id="rulesTable"></table>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+      <button id="rulesReset" class="btn btn-ghost btn-sm">恢复默认</button>
+      <span class="hint" style="margin:0">上限/下限决定生成时每个单位被夹住的窗口；当上级数值超过窗口时自动放宽（软窗口）。</span>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Tab 6 · 可视化 ============ -->
+<section class="tab" id="tab-viz">
+  <div class="row-tools">
+    <label style="font-size:12px;color:var(--muted)">编辑国家：</label>
+    <select id="countryViz" class="select" style="width:auto;min-width:200px"></select>
+    <label style="font-size:12px;color:var(--muted)">图：</label>
+    <div class="seg" id="vizMode" style="width:auto">
+      <button data-v="treemap" class="on">郡县面积 Treemap</button>
+      <button data-v="radar">国九维雷达</button>
+    </div>
+  </div>
+  <div class="chartbox">
+    <div class="tm" id="tmCtrl" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+      <h3 style="margin:0">Treemap · 某郡县级面积分布</h3>
+      <select id="tmJun"></select>
+      <button id="tmReset" class="btn btn-ghost btn-sm">返回全景</button>
+      <button id="tmFocusRoot" class="btn btn-ghost btn-sm">聚焦根郡</button>
+      <span class="hint" style="margin:0">点击色块下钻，用"返回全景 / 面包屑"复原。</span>
+    </div>
+    <div id="treeChart"></div>
+  </div>
+</section>
+
+<script>
+/* ================= 数据与规则 ================= */
+/* 与 特征/国家特征.json、兵役与国势.json 同一口径。pow 是领土权重，不是兵种 Q 合计。 */
+var COUNTRIES=[
+  {name:"G1 青岚",pow:34,forts:2,standing:0.08,popDensity:1.40,wealth:1.05,grain:0.85,culture:1.35,make:2.35,defense:0.80,build:1.05},
+  {name:"G2 苍羽",pow:32,forts:2,standing:0.10,popDensity:1.32,wealth:1.00,grain:0.82,culture:1.25,make:2.15,defense:0.90,build:1.00},
+  {name:"G3 百岭",pow:26,forts:2,standing:0.05,popDensity:2.85,wealth:2.05,grain:1.90,culture:1.05,make:1.15,defense:0.60,build:1.20},
+  {name:"G4 炽焰",pow:22,forts:2,standing:0.08,popDensity:2.55,wealth:1.70,grain:1.65,culture:0.95,make:1.25,defense:0.65,build:1.05},
+  {name:"G5 玄戈",pow:58,forts:3,standing:0.12,popDensity:0.62,wealth:0.72,grain:1.50,culture:0.65,make:0.90,defense:2.60,build:0.80},
+  {name:"G6 昆岳",pow:68,forts:3,standing:0.12,popDensity:0.45,wealth:0.65,grain:1.40,culture:0.60,make:0.80,defense:2.40,build:0.70},
+  {name:"G7 朔风",pow:56,forts:3,standing:0.11,popDensity:0.70,wealth:0.60,grain:0.50,culture:0.55,make:0.55,defense:1.90,build:0.55},
+  {name:"G8 烈庭",pow:52,forts:3,standing:0.11,popDensity:0.78,wealth:0.62,grain:0.55,culture:0.58,make:0.58,defense:1.80,build:0.58},
+  {name:"G9 天衡",pow:48,forts:2,standing:0.10,popDensity:1.15,wealth:1.12,grain:1.42,culture:2.15,make:1.08,defense:1.02,build:1.35},
+  {name:"G10 昭武",pow:42,forts:2,standing:0.10,popDensity:1.08,wealth:1.08,grain:1.35,culture:2.00,make:1.12,defense:1.08,build:1.28}
+];
+var TOTAL_POW=438, TOTAL_AREA=9600000, BASE_DENSITY=36;
+var AVG={cun:16,xiang:253,xian:3375,jun:282353};
+
+/* 指标：顺序即 9 项；levelIdx: 0村 1乡 2县 3郡 4京畿 5要塞 */
+var CORE_NAMES={area:"面积",pop:"人数",army:"兵力",make:"制造",def:"城防",cul:"文化",eco:"经济",grain:"产粮",build:"建筑"};
+var METRIC_KEYS=["area","pop","army","make","def","cul","eco","grain","build"];
+var EXT_GROUPS=[
+ {key:"mil",name:"军事",items:[
+   {k:"morale",n:"士气",r:{min:[10,20,60,300,200,100],max:[40,150,800,6000,3000,2000]}},
+   {k:"train",n:"训练",r:{min:[5,10,40,200,150,80],max:[30,100,600,4000,2500,1500]}},
+   {k:"supply",n:"补给",r:{min:[20,50,200,800,400,150],max:[100,400,2000,8000,5000,1000]}}]},
+ {key:"eco",name:"经济",items:[
+   {k:"tax",n:"税收",r:{min:[8,40,300,10000,6000,200],max:[60,500,4000,150000,60000,4000]}},
+   {k:"trade",n:"贸易",r:{min:[10,50,400,12000,7000,250],max:[70,600,5000,180000,70000,5000]}},
+   {k:"ore",n:"矿藏",r:{min:[1,3,20,500,300,20],max:[5,30,150,5000,3000,200]}}]},
+ {key:"civ",name:"内政",items:[
+   {k:"stability",n:"稳定度",r:{min:[40,50,60,70,80,80],max:[90,100,100,100,100,100]}}]},
+ {key:"tech",name:"科技",items:[
+   {k:"research",n:"科研",r:{min:[1,4,20,500,300,30],max:[8,50,300,8000,5000,300]}}]}
+];
+function coreItems(){return METRIC_KEYS.slice();}
+function allItems(){
+  var a=coreItems();
+  EXT_GROUPS.forEach(function(g){if(state.extra[g.key])a=a.concat(g.items.map(function(x){return x.k;}));});
+  return a;
+}
+function extName(k){var r="";EXT_GROUPS.forEach(function(g){g.items.forEach(function(it){if(it.k===k)r=it.n;});});return r;}
+function metricName(k){return CORE_NAMES[k]||extName(k)||k;}
+var DEFAULT_RULES={
+  area:{min:[4,40,800,100000,10000,1700],max:[40,1000,8000,600000,50000,4000]},
+  pop:{min:[500,1000,3000,15000,12000,3000],max:[1000,4000,20000,160000,80000,15000]},
+  army:{min:[25,50,150,800,600,300],max:[100,400,2000,16000,8000,8000]},
+  make:{min:[2,8,60,2500,800,40],max:[10,60,500,20000,5000,400]},
+  def:{min:[1,5,40,1500,2000,3000],max:[5,40,300,12000,10000,9000]},
+  cul:{min:[1,4,25,800,1200,15],max:[5,30,200,8000,10000,150]},
+  eco:{min:[10,50,400,15000,8000,300],max:[50,400,3000,120000,50000,2500]},
+  grain:{min:[20,100,800,30000,2000,500],max:[100,800,6000,200000,15000,4000]},
+  build:{min:[1,4,20,600,400,30],max:[5,30,200,8000,5000,250]}
+};
+EXT_GROUPS.forEach(function(g){g.items.forEach(function(it){DEFAULT_RULES[it.k]=it.r;});});
+var LVL_IDX={国:3,郡:3,县:2,乡:1,村:0,京畿:4,要塞:5};
+var LVL_NAME={3:"郡/国",2:"县",1:"乡",0:"里/村",4:"京畿",5:"要塞"};
+var CAPS={lite:{X:25,S:8,C:6},std:{X:40,S:10,C:8},full:{X:130,S:30,C:25}};
+var LEVEL_ORDER=["国","郡","京畿","要塞","县","乡","村"];
+
+var RULES=JSON.parse(JSON.stringify(DEFAULT_RULES));
+var state={country:0,fTer:1,jx:true,ysOn:true,ys:2,scale:"lite",extra:{mil:true,eco:true,civ:true,tech:false}};
+var COUNTRY_CFG=[];   // idx -> {areaMode,areaInput}
+COUNTRIES.forEach(function(c){COUNTRY_CFG.push({areaMode:"auto",areaInput:940000});});
+var COUNTRY_MACRO=[]; // idx -> {key:val,...} 用户显式输入的下发覆盖
+COUNTRIES.forEach(function(){COUNTRY_MACRO.push({});});
+var DATA=[];          // idx -> 国家根节点
+var model=null;       // = DATA[state.country]
+var expanded={}, expandedDetail={};
+var tmView="tree";    // 行政树页签视图
+
+/* ================= 工具 ================= */
+function $(id){return document.getElementById(id);}
+function fmt(n){return Math.round(n).toLocaleString("zh-CN");}
+function num(v){var n=parseFloat(v);return isNaN(n)?0:n;}
+function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+function rnd(a,b){return a+Math.random()*(b-a);}
+function win(key,lv){return {min:RULES[key].min[lv],max:RULES[key].max[lv]};}
+function countryArea(idx){
+  var cfg=COUNTRY_CFG[idx];
+  return cfg.areaMode==="manual"?cfg.areaInput:TOTAL_AREA*COUNTRIES[idx].pow/TOTAL_POW;
+}
+function factor(){return state.fTer;}
+
+/* 有界切分：n 份，每份∈[min,max]，和=total（窗口不足时自动放宽保持和守恒） */
+function splitBounded(total,n,min,max){
+  if(n<=0)return[];
+  n=Math.min(n,Math.floor(total/min));
+  n=Math.max(n,1);
+  var vals=[];
+  for(var i=0;i<n;i++){
+    var left=n-i-1,rem=total-vals.reduce(function(a,b){return a+b;},0);
+    var lo=Math.max(min,rem-left*max),hi=Math.min(max,rem-left*min);
+    if(hi<lo)hi=lo;
+    vals.push(lo+Math.random()*(hi-lo));
+  }
+  return vals;
+}
+/* 软窗口下发：把 parentVal 按 children 面积占比+抖动分配，保证下级之和≈上级 */
+function distributeMetric(children,parentVal,key,lv){
+  if(!children.length)return;
+  var totalA=0;children.forEach(function(c){totalA+=c.area;});
+  if(totalA<=0)return;
+  var mn=RULES[key].min[lv],mx=RULES[key].max[lv];
+  var base=parentVal/children.length;
+  var emn=Math.min(mn,base),emx=Math.max(mx,base);
+  var vals=children.map(function(c){return clamp(parentVal*(c.area/totalA)*rnd(0.93,1.07),emn,emx);});
+  var sum=vals.reduce(function(a,b){return a+b;},0);
+  if(sum>0){var s=parentVal/sum;vals=vals.map(function(v){return clamp(v*s,emn,emx);});}
+  children.forEach(function(c,i){c.m[key]=vals[i];});
+}
+
+/* ================= 生成器（idx=国家序号） ================= */
+var TERRAINS=["平原","草原","山林","丘陵","湖泊","沙漠"];
+var TERRAIN_WEIGHTS={
+  国:["平原","平原","平原","草原","山林","丘陵","湖泊"],
+  郡:["平原","草原","草原","山林","丘陵","丘陵","湖泊","沙漠"],
+  京畿:["平原","平原","平原","丘陵","山林","湖泊"],
+  县:["平原","平原","草原","草原","山林","丘陵","丘陵","湖泊","沙漠"],
+  乡:["平原","平原","草原","山林","山林","丘陵","丘陵","湖泊","沙漠"],
+  村:["平原","平原","草原","山林","丘陵","丘陵","湖泊","沙漠"],
+  要塞:["山林","山林","山林","丘陵","丘陵","丘陵","平原","草原"]
+};
+function randomTerrain(type){var a=TERRAIN_WEIGHTS[type]||TERRAIN_WEIGHTS["县"];return a[Math.floor(Math.random()*a.length)];}
+function newNode(type,id,area){
+  var m={area:area};
+  allItems().forEach(function(k){if(k!=="area")m[k]=0;});
+  return {type:type,id:id,area:area,name:null,terrain:randomTerrain(type),m:m,children:[]};
+}
+function buildLevel(parent, childType, count, cap){
+  var lv=LVL_IDX[childType];
+  var f=factor();
+  var mn=Math.min(RULES.area.max[lv],RULES.area.min[lv]*f);
+  var mx=Math.min(RULES.area.max[lv],Math.max(RULES.area.min[lv],RULES.area.max[lv]*f));
+  var areas=splitBounded(parent.area,count,mn,mx);
+  var idp=parent.id+".";
+  var kids=[];
+  areas.forEach(function(a,i){kids.push(newNode(childType,idp+i,Math.round(a*100)/100));});
+  allItems().forEach(function(key){
+    if(key==="area")return;
+    distributeMetric(kids,parent.m[key],key,lv);
+  });
+  return kids;
+}
+function countFor(parentArea,avgType,capMin,capMax){
+  return clamp(Math.round(parentArea/AVG[avgType]),capMin,capMax);
+}
+function applyMacroTo(idx,root){
+  allItems().forEach(function(key){
+    if(key==="area"){root.m.area=countryArea(idx);return;}
+    var ov=COUNTRY_MACRO[idx][key];
+    if(ov!=null)root.m[key]=ov;
+  });
+}
+function extDefaults(root){
+  var A=root.m.area,P=root.m.pop;
+  EXT_GROUPS.forEach(function(g){if(!state.extra[g.key])return;g.items.forEach(function(it){
+    var k=it.k;
+    if(k==="morale")root.m[k]=P*0.02;
+    else if(k==="train")root.m[k]=root.m.army*0.3;
+    else if(k==="supply")root.m[k]=P*0.03;
+    else if(k==="tax")root.m[k]=A*0.05;
+    else if(k==="trade")root.m[k]=A*0.06;
+    else if(k==="ore")root.m[k]=A*0.002;
+    else if(k==="stability")root.m[k]=75;
+    else if(k==="research")root.m[k]=A*0.001;
+  });});
+}
+function generate(idx){
+  var cap=CAPS[state.scale];
+  var area=countryArea(idx);
+  var fac=factor();
+  var root=newNode("国",String(idx),area);
+  root.name=COUNTRIES[idx].name;
+  root.rank=0;
+
+  // 兵力只含常备。国势加征随世界变化，不写进这次生成。
+  var profile=COUNTRIES[idx];
+  var pop=area*BASE_DENSITY*profile.popDensity*fac;
+  root.m.pop=pop; root.m.army=pop*profile.standing;
+  root.m.make=pop*0.00042*profile.make; root.m.def=pop*0.00022*profile.defense; root.m.cul=pop*0.00028*profile.culture;
+  root.m.eco=pop*0.0018*profile.wealth; root.m.grain=pop*0.0036*profile.grain; root.m.build=pop*0.000028*profile.build;
+  extDefaults(root);
+  applyMacroTo(idx,root);
+
+  var nJ=Math.max(1,Math.round(area/AVG.jun));
+  var jMin=Math.min(RULES.area.max[3],RULES.area.min[3]*fac);
+  var jMax=Math.min(RULES.area.max[3],Math.max(RULES.area.min[3],RULES.area.max[3]*fac));
+  var junAreas=splitBounded(area,nJ,jMin,jMax);
+  var jun=junAreas.map(function(a,i){var n=newNode("郡",root.id+"."+i,Math.round(a*100)/100);n.rank=1;return n;});
+  allItems().forEach(function(key){if(key!=="area")distributeMetric(jun,root.m[key],key,3);});
+  root.children=jun;
+
+  if(state.jx){
+    var mi=0;for(var k=1;k<jun.length;k++){if(jun[k].area>jun[mi].area)mi=k;}
+    var jxA=Math.min(rnd(3,15)*AVG.xian, jun[mi].area*0.5);
+    if(jxA>2500){
+      jun[mi].area=Math.round((jun[mi].area-jxA)*100)/100;
+      var jx=newNode("京畿",root.id+".jx",Math.round(jxA*100)/100);jx.rank=1;
+      allItems().forEach(function(key){if(key!=="area")jx.m[key]=jun[mi].m[key]*0.8;});
+      root.children.splice(mi,0,jx);
+    }
+  }
+
+  root.children.forEach(function(node){
+    if(node.type==="京畿"){
+      node.children=buildLevel(node,"县",countFor(node.area,"xian",3,15),cap.X);
+      node.children.forEach(function(c){c.rank=2;});
+      return;
+    }
+    node.children=buildLevel(node,"县",countFor(node.area,"xian",20,cap.X),cap.X);
+    node.children.forEach(function(c){c.rank=2;});
+  });
+
+  var firstJun=null,firstXian=null;
+  root.children.forEach(function(node){
+    if(node.type==="郡"&&!firstJun)firstJun=node;
+    node.children.forEach(function(x){
+      x.children=buildLevel(x,"乡",countFor(x.area,"xiang",6,cap.S),cap.S);
+      x.children.forEach(function(c){c.rank=3;});
+    });
+  });
+  if(state.ysOn&&firstJun&&firstJun.children.length){
+    firstXian=firstJun.children[0];
+    var ysTotal=0,ysAreas=[];
+    var fortCount=profile.forts||state.ys;
+    for(var i=0;i<fortCount;i++){var a=rnd(0.5,1.2)*AVG.xian;a=clamp(a,1700,4000);ysAreas.push(Math.round(a*100)/100);ysTotal+=ysAreas[i];}
+    var take=Math.min(ysTotal,firstXian.area*0.6);
+    var oldS=firstXian.area;
+    firstXian.area=Math.round((oldS-take)*100)/100;
+    firstXian.children=buildLevel(firstXian,"乡",countFor(firstXian.area,"xiang",4,cap.S),cap.S);
+    firstXian.children.forEach(function(c){c.rank=3;});
+    var kids=ysAreas.map(function(a,i){var n=newNode("要塞",firstXian.id+".ys"+i,a);n.rank=3;return n;});
+    allItems().forEach(function(key){if(key!=="area")distributeMetric(kids,firstXian.m[key],key,5);});
+    kids.forEach(function(k){firstXian.children.push(k);});
+  }
+
+  root.children.forEach(function(node){
+    (node.children||[]).forEach(function(x){
+      (x.children||[]).forEach(function(s){
+        if(s.type==="乡"){s.children=buildLevel(s,"村",countFor(s.area,"cun",4,cap.C),cap.C);s.children.forEach(function(c){c.rank=4;});}
+      });
+    });
+  });
+
+  return root;
+}
+
+function regenerate(idx){
+  DATA[idx]=generate(idx);
+  if(idx===state.country)model=DATA[idx];
+}
+function runAll(){
+  COUNTRIES.forEach(function(_,i){DATA[i]=generate(i);});
+  model=DATA[state.country];
+  expanded={};expandedDetail={};
+  if(model)expanded[model.id]=true;
+  refreshAll();
+}
+/* ================= 渲染：统计卡 ================= */
+function countNodes(root,type){
+  var c=0;
+  (function walk(n){
+    if(n.type===type)c++;
+    (n.children||[]).forEach(walk);
+  })(root);
+  return c;
+}
+function countryStats(r){
+  return [
+    ["国土面积","km²",fmt(r.area)],
+    ["郡/国","个",fmt(countNodes(r,"郡"))],
+    ["县","个",fmt(countNodes(r,"县"))],
+    ["乡","个",fmt(countNodes(r,"乡"))],
+    ["里/村","个",fmt(countNodes(r,"村"))],
+    ["京畿",state.jx?"有":"无",state.jx?fmt(countNodes(r,"京畿"))+" 个":"—"],
+    ["要塞","座",fmt(countNodes(r,"要塞"))],
+    ["总人口","人",fmt(r.m.pop)]
+  ];
+}
+function fillCards(el,items){
+  el.innerHTML="";
+  items.forEach(function(it){
+    var d=document.createElement("div");d.className="card";
+    d.innerHTML='<div class="k">'+it[0]+'</div><div class="v">'+it[2]+'</div><div class="u">'+it[1]+'</div>';
+    el.appendChild(d);
+  });
+}
+function renderCards(){
+  if(!model)return;
+  fillCards($("cards"),countryStats(model));
+  fillCards($("cardsNation"),countryStats(model));
+}
+
+/* ================= 渲染：十国总览表 + 对比图 ================= */
+function shortName(c){return c.name.replace(/^G\d+\s*/,"");}
+function renderOverview(){
+  if(!model)return;
+  $("ovCur").textContent=model.name;
+  var t=$("ovTable");t.innerHTML="";
+  var head="<tr><th>国家</th><th>领土权重</th><th>国土面积</th><th>郡</th><th>县</th><th>乡</th><th>里/村</th><th>京畿</th><th>要塞</th><th>总人口</th><th>总兵力</th></tr>";
+  var rows="";
+  DATA.forEach(function(r,i){
+    if(!r)return;
+    var cur=i===state.country?" cur":"";
+    rows+='<tr class="'+cur+'">'
+      +'<td class="name">'+r.name+'</td>'
+      +'<td>'+COUNTRIES[i].pow+'</td>'
+      +'<td>'+fmt(r.area)+'</td>'
+      +'<td>'+countNodes(r,"郡")+'</td>'
+      +'<td>'+countNodes(r,"县")+'</td>'
+      +'<td>'+countNodes(r,"乡")+'</td>'
+      +'<td>'+countNodes(r,"村")+'</td>'
+      +'<td>'+(state.jx?countNodes(r,"京畿"):"—")+'</td>'
+      +'<td>'+countNodes(r,"要塞")+'</td>'
+      +'<td>'+fmt(r.m.pop)+'</td>'
+      +'<td>'+fmt(r.m.army)+'</td></tr>';
+  });
+  t.innerHTML=head+rows;
+  renderOvChart();
+}
+var ovChart=null;
+function renderOvChart(){
+  if(!window.echarts)return;
+  var names=DATA.map(function(r,i){return shortName(COUNTRIES[i]);});
+  var areas=DATA.map(function(r){return r?Math.round(r.area):0;});
+  var pops=DATA.map(function(r){return r?Math.round(r.m.pop):0;});
+  if(!ovChart)ovChart=echarts.init($("ovChart"));
+  ovChart.setOption({
+    tooltip:{trigger:"axis",confine:true},
+    legend:{data:["国土面积(万km²)","总人口(百万人)"]},
+    grid:{left:56,right:56,top:44,bottom:34},
+    xAxis:{type:"category",data:names,axisLabel:{fontSize:11}},
+    yAxis:[
+      {type:"value",name:"万 km²",axisLabel:{formatter:function(v){return v;}},splitLine:{lineStyle:{color:"#eee4d2"}}},
+      {type:"value",name:"百万人",axisLabel:{formatter:function(v){return v;}}}
+    ],
+    series:[
+      {name:"国土面积(万km²)",type:"bar",data:areas.map(function(a){return +(a/10000).toFixed(1);}),itemStyle:{color:"#93772f"},barMaxWidth:22},
+      {name:"总人口(百万人)",type:"line",yAxisIndex:1,data:pops.map(function(p){return +(p/1000000).toFixed(1);}),itemStyle:{color:"#b3402a"},smooth:true}
+    ]
+  });
+}
+
+/* ================= 渲染：国之宏观 ================= */
+function unitOf(key){return key==="area"?"km²":(key==="pop"?"人":(key==="army"?"兵员":""));}
+function maxOf10(key){var m=0;DATA.forEach(function(r){if(r&&r.m[key]>m)m=r.m[key];});return m;}
+function rankOf10(key){
+  var val=model.m[key],greater=0,tie=0;
+  DATA.forEach(function(r){if(!r)return;if(r.m[key]>val)greater++;if(r.m[key]===val)tie++;});
+  var rk=greater+1;
+  return tie>1?("十国并列第 "+rk+"（"+tie+" 国同值）"):("十国第 "+rk);
+}
+function macroRow(key,val){
+  var over=key!=="area"&&val>RULES[key].max[3];
+  var wrap=document.createElement("div");wrap.className="mrow"+(over?" over":"");
+  var nm=document.createElement("div");nm.className="mname";
+  nm.innerHTML=METRIC_NAME_ZH(key)+'<span class="munit">'+unitOf(key)+'</span>';
+  var ip=document.createElement("input");ip.type="text";ip.setAttribute("inputmode","numeric");ip.className="mval";
+  ip.value=fmt(val);
+  ip.addEventListener("focus",function(){ip.value=String(Math.round(val));ip.select();wrap.classList.add("focus");});
+  ip.addEventListener("blur",function(){wrap.classList.remove("focus");ip.value=fmt(num(ip.value));});
+  ip.addEventListener("change",function(){
+    var n=num(ip.value);
+    if(key==="area"){COUNTRY_CFG[state.country].areaMode="manual";COUNTRY_CFG[state.country].areaInput=n;COUNTRY_MACRO[state.country].area=n;}
+    else COUNTRY_MACRO[state.country][key]=n;
+    ip.value=fmt(n);
+  });
+  var meta=document.createElement("div");meta.className="mmeta";
+  var bar=document.createElement("div");bar.className="mbar";
+  var i=document.createElement("i");
+  var mx=maxOf10(key);
+  i.style.width=(mx>0?Math.min(100,val/mx*100):0)+"%";
+  bar.appendChild(i);
+  var rank=document.createElement("span");rank.className="mrank";rank.textContent=rankOf10(key);
+  meta.appendChild(bar);meta.appendChild(rank);
+  if(over){
+    var h=document.createElement("span");h.className="mhint";
+    h.textContent="已超「"+LVL_NAME[3]+"」上限，下发将自动放宽窗口";
+    meta.appendChild(h);
+  }
+  wrap.appendChild(nm);wrap.appendChild(ip);wrap.appendChild(meta);
+  return wrap;
+}
+function renderMacro(){
+  if(!model)return;
+  var g=$("macroGrid");g.innerHTML="";
+  allItems().forEach(function(key){g.appendChild(macroRow(key,model.m[key]));});
+  renderMacroCurrent();
+}
+function renderMacroCurrent(){
+  var c=$("macroCurrent");c.innerHTML="";
+  allItems().forEach(function(k){
+    var mx=maxOf10(k)||1;
+    var row=document.createElement("div");row.className="cmp-row";
+    var nm=document.createElement("span");nm.className="cmp-name";nm.textContent=METRIC_NAME_ZH(k);
+    var v=document.createElement("span");v.className="cmp-val";v.textContent=fmt(model.m[k]);
+    var bar=document.createElement("div");bar.className="cmp-bar";
+    var i=document.createElement("i");i.style.width=Math.min(100,model.m[k]/mx*100)+"%";
+    bar.appendChild(i);
+    row.appendChild(nm);row.appendChild(v);row.appendChild(bar);
+    c.appendChild(row);
+  });
+}
+function METRIC_NAME_ZH(key){return metricName(key);}
+
+/* ================= 渲染：规则表 ================= */
+function renderRules(){
+  var t=$("rulesTable");t.innerHTML="";
+  var h='<tr><th>指标</th><th>里/村</th><th>乡</th><th>县</th><th>郡/国</th><th>京畿</th><th>要塞</th></tr>';
+  h+='<tr><th style="background:transparent"></th>';
+  for(var i=0;i<6;i++)h+='<th>下限<br>上限</th>';
+  h+='</tr>';
+  t.innerHTML=h;
+  allItems().forEach(function(key){
+    var tr=document.createElement("tr");tr.className="metric";
+    var td=document.createElement("td");td.textContent=METRIC_NAME_ZH(key);
+    tr.appendChild(td);
+    for(var lv=0;lv<6;lv++){
+      var c=document.createElement("td");
+      c.innerHTML='<input type="number" step="any" data-key="'+key+'" data-lv="'+lv+'" data-kind="min" value="'+RULES[key].min[lv]+'">'+
+                  '<input type="number" step="any" data-key="'+key+'" data-lv="'+lv+'" data-kind="max" value="'+RULES[key].max[lv]+'">';
+      tr.appendChild(c);
+    }
+    t.appendChild(tr);
+  });
+}
+function bindRules(){
+  $("rulesTable").addEventListener("change",function(e){
+    var ip=e.target;if(!ip.getAttribute||!ip.getAttribute("data-key"))return;
+    RULES[ip.getAttribute("data-key")][ip.getAttribute("data-kind")][+ip.getAttribute("data-lv")]=num(ip.value);
+  });
+}
+[["exMil","mil"],["exEco","eco"],["exCiv","civ"],["exTech","tech"]].forEach(function(p){
+  var el=$(p[0]);el.checked=!!state.extra[p[1]];
+  el.addEventListener("change",function(){
+    state.extra[p[1]]=this.checked;
+    renderRules();refreshAll();
+    toast("已切换指标模块，扩展数据需重新生成后生效");
+  });
+});
+$("rulesReset").addEventListener("click",function(){
+  RULES=JSON.parse(JSON.stringify(DEFAULT_RULES));
+  renderRules();
+});
+
+/* ================= 渲染：行政树（只读预览 / 可编辑） ================= */
+function renderTreePrev(){
+  var c=$("treePrev");c.innerHTML="";
+  if(!model)return;
+  var div=document.createElement("div");
+  renderNode(model,div,true);
+  c.appendChild(div);
+  $("treeCount").textContent=nodeSummary();
+}
+function renderTree(){
+  var c=$("tree");c.innerHTML="";
+  if(!model)return;
+  var div=document.createElement("div");
+  renderNode(model,div,false);
+  c.appendChild(div);
+  $("treeCount2").textContent=nodeSummary();
+}
+function nodeSummary(){
+  if(!model)return "";
+  var t=countNodes(model,"郡")+"郡 · "+countNodes(model,"县")+"县 · "+countNodes(model,"乡")+"乡 · "+countNodes(model,"村")+"村";
+  return t;
+}
+function typeName(node){
+  return {国:"国",郡:"郡",县:"县",乡:"乡",村:"里/村",京畿:"京畿",要塞:"要塞"}[node.type];
+}
+function shortLabel(node){
+  var m=node.m;
+  return "面积 "+fmt(m.area)+" km² · 人口 "+fmt(m.pop)+" · 兵力 "+fmt(m.army);
+}
+function metricInput(node,key,unit){
+  var wrap=document.createElement("span");wrap.className="k";
+  var lb=document.createElement("span");lb.textContent=METRIC_NAME_ZH(key);
+  var ip=document.createElement("input");ip.type="number";ip.step="any";
+  ip.value=Math.round(node.m[key]);
+  ip.onchange=function(){
+    var v=num(ip.value);node.m[key]=v;
+    if(key==="area")rebalanceArea(node,v);
+  };
+  wrap.appendChild(lb);wrap.appendChild(ip);
+  return wrap;
+}
+function metricAllGrid(node){
+  var g=document.createElement("div");g.className="metric-grid";
+  allItems().forEach(function(key){
+    var wrap=document.createElement("div");wrap.className="mg";
+    var lb=document.createElement("label");lb.textContent=METRIC_NAME_ZH(key);
+    var ip=document.createElement("input");ip.type="number";ip.step="any";
+    ip.value=Math.round(node.m[key]);
+    ip.onchange=function(){
+      var v=num(ip.value);
+      if(key==="area"){node.m[key]=v;rebalanceArea(node,v);}
+      else node.m[key]=v;
+    };
+    wrap.appendChild(lb);wrap.appendChild(ip);
+    g.appendChild(wrap);
+  });
+  return g;
+}
+function rebalanceArea(node,newArea){
+  node.area=newArea;node.m.area=newArea;
+  if(node.children&&node.children.length){
+    var scale=newArea/node.children.reduce(function(a,b){return a+b.area;},0);
+    node.children.forEach(function(ch){ch.area=Math.round(ch.area*scale*100)/100;ch.m.area=ch.area;});
+  }
+}
+function renderNode(node,container,readonly){
+  var hasKids=node.children&&node.children.length;
+  var isOpen=!!expanded[node.id];
+  var row=document.createElement("div");row.className="node";
+  var head=document.createElement("div");head.className="node-head";
+  var tog=document.createElement("span");
+  tog.className="tog"+(hasKids?"":" leaf");
+  tog.textContent=hasKids?(isOpen?"▾":"▸"):"·";
+  if(hasKids){tog.onclick=function(){expanded[node.id]=!expanded[node.id];renderAllTrees();};}
+  var nm=document.createElement("span");nm.className="nm";
+  nm.appendChild(document.createTextNode(typeName(node)+" "));
+  if(!readonly){
+    var ni=document.createElement("input");ni.className="nm-input";ni.value=node.name||"";ni.placeholder=node.id;
+    ni.title="编辑名称（留空恢复编号）";
+    ni.onchange=function(){node.name=ni.value.trim()||null;};
+    var ts=document.createElement("select");ts.className="nm-terr";
+    TERRAINS.forEach(function(t){var o=document.createElement("option");o.value=t;o.textContent=t;ts.appendChild(o);});
+    ts.value=node.terrain;ts.title="地形";
+    ts.onchange=function(){node.terrain=ts.value;};
+    nm.appendChild(ni);nm.appendChild(ts);
+  }else{
+    nm.appendChild(document.createTextNode(node.id));
+  }
+  if(node.type==="京畿")nm.innerHTML+='<span class="tag jx">京畿</span>';
+  if(node.type==="要塞")nm.innerHTML+='<span class="tag ys">要塞</span>';
+  if(node.type==="国")nm.innerHTML+='<span class="tag" style="background:rgba(179,64,42,.1);color:var(--cinn);border:1px solid var(--cinn)">'+(node.name||node.id)+'</span>';
+  head.appendChild(tog);head.appendChild(nm);
+  if(readonly){
+    var lbl=document.createElement("span");lbl.style.fontSize="11px";lbl.style.color="var(--muted)";
+    lbl.textContent=shortLabel(node);
+    head.appendChild(lbl);
+  }else{
+    var kArea=metricInput(node,"area","km²");
+    var kPop=metricInput(node,"pop","人");
+    var kArmy=metricInput(node,"army","");
+    head.appendChild(kArea);head.appendChild(kPop);head.appendChild(kArmy);
+    var dt=document.createElement("button");dt.className="detail-toggle";
+    dt.textContent=expandedDetail[node.id]?"收起指标":"编辑全部指标";
+    dt.onclick=function(){expandedDetail[node.id]=!expandedDetail[node.id];renderAllTrees();};
+    var rb=document.createElement("button");rb.className="btn btn-ghost btn-sm";
+    rb.textContent=hasKids?"重算下级":"—";
+    if(hasKids){rb.onclick=function(){rebuildChildren(node);expanded[node.id]=true;renderAllTrees();};}
+    var acts=document.createElement("span");acts.className="row-actions";
+    acts.appendChild(dt);acts.appendChild(rb);
+    head.appendChild(acts);
+  }
+  row.appendChild(head);
+  if(!readonly&&expandedDetail[node.id]){
+    var d=document.createElement("div");d.className="detail";
+    d.appendChild(metricAllGrid(node));
+    row.appendChild(d);
+  }
+  if(hasKids&&isOpen){
+    var body=document.createElement("div");body.className="node-body";
+    node.children.forEach(function(ch){renderNode(ch,body,readonly);});
+    row.appendChild(body);
+  }
+  container.appendChild(row);
+}
+function renderAllTrees(){renderTree();renderTreePrev();}
+function rebuildChildren(node){
+  if(!node.children)return;
+  var cap=CAPS[state.scale];
+  if(node.type==="国"){
+    node.children.forEach(function(ch){
+      ch.children=buildLevel(ch,"县",countFor(ch.area,"xian",ch.type==="京畿"?3:20,cap.X),cap.X);
+    });
+    return;
+  }
+  if(node.type==="郡"){
+    node.children.forEach(function(x){x.children=buildLevel(x,"乡",countFor(x.area,"xiang",6,cap.S),cap.S);});
+    return;
+  }
+  if(node.type==="县"){
+    node.children.forEach(function(s){if(s.type==="乡")s.children=buildLevel(s,"村",countFor(s.area,"cun",4,cap.C),cap.C);});
+    return;
+  }
+}
+function expandToLevel(node,minLv){
+  var rank={国:1,郡:1,京畿:1,县:2,乡:3,村:4,要塞:4}[node.type];
+  if(rank<minLv)expanded[node.id]=true;
+  (node.children||[]).forEach(function(ch){expandToLevel(ch,minLv);});
+}
+function expandAllToXian(){if(model)expandToLevel(model,2);renderAllTrees();}
+function collapseAll(){expanded={};expandedDetail={};if(model)expanded[model.id]=true;renderAllTrees();}
+$("expandAll").addEventListener("click",expandAllToXian);
+$("collapseAll").addEventListener("click",collapseAll);
+$("expandAll2").addEventListener("click",expandAllToXian);
+$("collapseAll2").addEventListener("click",collapseAll);
+
+/* ================= 渲染：全量表格视图 ================= */
+function flatNodes(root){
+  var out=[];
+  (function walk(n){out.push(n);(n.children||[]).forEach(walk);})(root);
+  return out;
+}
+function renderFullTable(){
+  var tb=$("fullTable"),warn=$("tableWarn");
+  tb.innerHTML="";warn.textContent="";
+  if(!model){warn.textContent="暂无数据，请先在总览页生成。";return;}
+  var lv=$("tableLevel").value;
+  var nodes=flatNodes(model).filter(function(n){
+    return lv==="全部"||n.type===lv;
+  });
+  if(nodes.length>3000){warn.textContent="行数过多（"+nodes.length+"），仅显示前 3000 行，请用「显示级别」筛选。";nodes=nodes.slice(0,3000);}
+  var head="<tr>"
+    +'<th class="sticky c">国家</th><th class="sticky2 c">级别</th>'
+    +"<th class=\"c\">编号</th><th class=\"c\">名称</th><th class=\"c\">地形</th>";
+  allItems().forEach(function(k){head+="<th>"+METRIC_NAME_ZH(k)+"</th>";});
+  head+="</tr>";
+  var rows="";
+  nodes.forEach(function(n){
+    rows+="<tr>"
+      +'<td class="sticky c" data-name="'+n.name+'"></td>'
+      +'<td class="sticky2 c">'+typeName(n)+'</td>'
+      +'<td class="c">'+n.id+'</td>'
+      +'<td class="name">'+labelName(n)+'</td>'
+      +'<td class="c terr">'+(n.terrain||"—")+'</td>';
+    allItems().forEach(function(k){
+      rows+=fullMetricCell(n,k);
+    });
+    rows+="</tr>";
+  });
+  tb.innerHTML=head+rows;
+  /* 回填国家名（数据属性） */
+  var cells=tb.querySelectorAll("td.sticky");
+  nodes.forEach(function(n,i){cells[i].textContent=n.name||model.name;});
+}
+function labelName(n){return n.name||n.id;}
+function fullMetricCell(n,k){
+  return '<td data-node-id="'+n.id+'" data-key="'+k+'"><input type="number" step="any" value="'+Math.round(n.m[k])+'"></td>';
+}
+$("tableLevel").addEventListener("change",renderFullTable);
+$("fullTable").addEventListener("change",function(e){
+  var ip=e.target;
+  if(ip.tagName!=="INPUT")return;
+  var td=ip.closest("td");if(!td)return;
+  var id=td.getAttribute("data-node-id"),key=td.getAttribute("data-key");
+  var n=findNode(model,id);if(!n)return;
+  var v=num(ip.value);
+  if(key==="area"){n.m[key]=v;rebalanceArea(n,v);}
+  else n.m[key]=v;
+});
+function findNode(root,id){
+  var hit=null;
+  (function walk(n){if(n.id===id)hit=n;else (n.children||[]).forEach(walk);})(root);
+  return hit;
+}
+
+/* ================= 渲染：Treemap / 雷达 ================= */
+var chart=null,radarChart=null,tmData=null;
+function fillJunSelect(){
+  var sel=$("tmJun");sel.innerHTML="";
+  if(!model)return;
+  (model.children||[]).forEach(function(node,i){
+    if(node.type==="郡"){
+      var o=document.createElement("option");o.value=node.id;o.textContent="郡"+(i+1)+"（"+(node.children?node.children.length:0)+"县）";
+      sel.appendChild(o);
+    }
+  });
+  if(sel.options.length)sel.selectedIndex=0;
+}
+function nodeSeq(parent,node){var i=parent.children.indexOf(node);return i+1;}
+function chartData(jun){
+  if(!jun)return[];
+  return jun.children.filter(function(x){return x.type==="县";}).map(function(x){
+    return {name:"县 "+nodeSeq(jun,x),value:Math.round(x.area)};
+  });
+}
+function makeTreemapOption(data){
+  return {
+    tooltip:{trigger:"item",triggerOn:"click",confine:true,renderMode:"richText",
+      formatter:function(p){return p.name+": "+fmt(p.value)+" km²";}},
+    series:[{
+      type:"treemap",data:data,roam:false,nodeClick:"zoomToNode",
+      breadcrumb:{show:true,itemStyle:{color:"#efe8da",borderColor:"#ddd3bf",textStyle:{color:"#33303a"}},emphasis:{itemStyle:{color:"#b3402a"}}},
+      label:{show:true,formatter:"{b}\n{c}",fontSize:11,color:"#33303a"},
+      itemStyle:{borderColor:"#fdfbf6",borderWidth:1,gapWidth:1},
+      levels:[{itemStyle:{color:"#d8e2ea"}},{itemStyle:{color:"#c6d6e0"}}]
+    }]
+  };
+}
+function renderTreemap(){
+  if(!window.echarts)return;
+  var sel=$("tmJun");
+  var id=sel.value||(sel.options.length?sel.options[0].value:null);
+  var jun=null;
+  if(id)(function walk(n){if(n.id===id)jun=n;else (n.children||[]).forEach(walk);})(model);
+  tmData=chartData(jun);
+  if(!chart)chart=echarts.init($("treeChart"));
+  chart.setOption(makeTreemapOption(tmData));
+}
+function resetTreemap(){
+  if(chart&&tmData){chart.setOption(makeTreemapOption(tmData),true);}
+}
+function renderRadar(){
+  if(!window.echarts)return;
+  var keys=coreItems().filter(function(k){return k!=="area";});
+  var maxs={};
+  keys.forEach(function(k){var mx=0;DATA.forEach(function(r){if(r&&r.m[k]>mx)mx=r.m[k];});maxs[k]=mx||1;});
+  if(!radarChart)radarChart=echarts.init($("treeChart"));
+  var cur=model?keys.map(function(k){return +(model.m[k]/maxs[k]).toFixed(3);}):[];
+  var avg=keys.map(function(k){
+    var s=0,c=0;DATA.forEach(function(r){if(r){s+=r.m[k];c++;}});
+    return +( (c?(s/c):0)/maxs[k] ).toFixed(3);
+  });
+  radarChart.setOption({
+    tooltip:{confine:true},
+    legend:{data:["当前国","十国均值"],bottom:0},
+    radar:{indicator:keys.map(function(k){return {name:METRIC_NAME_ZH(k),max:1};}),
+      radius:"62%",splitArea:{areaStyle:{color:["#fff","#f6efe1"]}}},
+    series:[{type:"radar",data:[
+      {name:"当前国",value:cur,itemStyle:{color:"#b3402a"},areaStyle:{opacity:.18}},
+      {name:"十国均值",value:avg,itemStyle:{color:"#93772f"},areaStyle:{opacity:.1}}
+    ]}]
+  });
+}
+$("tmReset").addEventListener("click",resetTreemap);
+$("tmFocusRoot").addEventListener("click",resetTreemap);
+$("tmJun").addEventListener("change",renderTreemap);
+function renderViz(){
+  if(!window.echarts)return;
+  var mode=$("vizMode").querySelector("button.on").getAttribute("data-v");
+  if(mode==="radar"){renderRadar();}
+  else{fillJunSelect();renderTreemap();}
+}
+/* ================= 导入 / 导出 ================= */
+var toastEl=null;
+function toast(msg){
+  if(!toastEl){
+    toastEl=document.createElement("div");
+    toastEl.style.cssText="position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--cinn);color:#fff;padding:9px 18px;border-radius:6px;font-size:13px;z-index:99;box-shadow:0 4px 14px rgba(0,0,0,.18)";
+    document.body.appendChild(toastEl);
+  }
+  toastEl.style.opacity="1";toastEl.textContent=msg;
+  clearTimeout(toastEl._t);
+  toastEl._t=setTimeout(function(){toastEl.style.opacity="0";toastEl.style.transition="opacity .4s";setTimeout(function(){if(toastEl){toastEl.remove();toastEl=null;}},420);},2000);
+}
+function stamp(){
+  var d=new Date(),p=function(x){return (x<10?"0":"")+x;};
+  return ""+d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+"_"+p(d.getHours())+p(d.getMinutes());
+}
+function download(filename,text,mime){
+  var blob=new Blob([text],{type:mime||"application/octet-stream"});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement("a");a.href=url;a.download=filename;
+  document.body.appendChild(a);a.click();
+  setTimeout(function(){URL.revokeObjectURL(url);a.remove();},400);
+}
+function buildExportData(){
+  return {version:2,rules:RULES,meta:{country:state.country,scale:state.scale,fTer:state.fTer,jx:state.jx,ysOn:state.ysOn,ys:state.ys,extra:state.extra,macro:COUNTRY_MACRO,cfg:COUNTRY_CFG},countries:DATA};
+}
+$("expJson").addEventListener("click",function(){
+  try{download("沙盒国度数据_"+stamp()+".json",JSON.stringify(buildExportData(),null,2),"application/json");toast("已导出 JSON");}
+  catch(e){toast("导出失败："+e.message);}
+});
+function exportExcel(){
+  if(!window.XLSX){toast("SheetJS 未加载，请联网后重试");return;}
+  var wb=XLSX.utils.book_new();
+  var ov=[["国家","领土权重","国土面积(km²)","郡","县","乡","里/村","京畿","要塞","总人口","总兵力"]];
+  DATA.forEach(function(r,i){if(!r)return;ov.push([r.name,COUNTRIES[i].pow,Math.round(r.area),countNodes(r,"郡"),countNodes(r,"县"),countNodes(r,"乡"),countNodes(r,"村"),state.jx?countNodes(r,"京畿"):0,countNodes(r,"要塞"),Math.round(r.m.pop),Math.round(r.m.army)]);});
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(ov),"总览");
+  var detKeys=allItems().filter(function(k){return k!=="area";});
+  var det=[["国家","级别","编号","名称","地形","面积(km²)"].concat(detKeys.map(function(k){return METRIC_NAME_ZH(k);}))];
+  DATA.forEach(function(r){if(!r)return;(function walk(n){
+    var row=[r.name,typeName(n),n.id,n.name||"",n.terrain||"",Math.round(n.area)];
+    detKeys.forEach(function(k){row.push(Math.round(n.m[k]||0));});
+    det.push(row);
+    (n.children||[]).forEach(walk);
+  })(r);});
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(det),"明细");
+  var ru=[["指标","里/村下限","里/村上限","乡下限","乡上限","县下限","县上限","郡/国下限","郡/国上限","京畿下限","京畿上限","要塞下限","要塞上限"]];
+  allItems().forEach(function(k){ru.push([METRIC_NAME_ZH(k),RULES[k].min[0],RULES[k].max[0],RULES[k].min[1],RULES[k].max[1],RULES[k].min[2],RULES[k].max[2],RULES[k].min[3],RULES[k].max[3],RULES[k].min[4],RULES[k].max[4],RULES[k].min[5],RULES[k].max[5]]);});
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(ru),"规则");
+  XLSX.writeFile(wb,"沙盒国度数据_"+stamp()+".xlsx");
+  toast("已导出 Excel");
+}
+$("expExcel").addEventListener("click",exportExcel);
+$("impJson").addEventListener("click",function(){$("fileJson").click();});
+$("impExcel").addEventListener("click",function(){$("fileExcel").click();});
+$("fileJson").addEventListener("change",function(){
+  var f=this.files[0];if(!f)return;this.value="";
+  var rd=new FileReader();
+  rd.onload=function(){
+    try{
+      var o=JSON.parse(rd.result);
+      if(o.rules)RULES=o.rules;
+      if(o.meta)restoreMeta(o.meta);
+      if(Array.isArray(o.countries)&&o.countries.length)DATA=o.countries.map(normalizeTree);else throw "countries 缺失";
+      model=DATA[state.country]||generate(state.country);
+      syncAreaMode();renderRules();refreshAll();toast("已导入 JSON");
+    }catch(e){toast("JSON 导入失败："+e.message);}
+  };
+  rd.readAsText(f);
+});
+/* ================= 本机持久化（localStorage） ================= */
+function normalizeTree(root){
+  (function walk(n){
+    if(!n.terrain||TERRAINS.indexOf(n.terrain)<0)n.terrain=randomTerrain(n.type);
+    (n.children||[]).forEach(walk);
+  })(root);
+  return root;
+}
+function packState(){return {country:state.country,scale:state.scale,fTer:state.fTer,jx:state.jx,ysOn:state.ysOn,ys:state.ys,extra:state.extra,macro:COUNTRY_MACRO,cfg:COUNTRY_CFG};}
+function restoreMeta(m){
+  state.country=+m.country||0;if(m.scale)state.scale=m.scale;
+  if(m.fTer!=null)state.fTer=+m.fTer;if(m.jx!=null)state.jx=!!m.jx;
+  if(m.ysOn!=null)state.ysOn=!!m.ysOn;if(m.ys!=null)state.ys=+m.ys;
+  if(m.extra)state.extra=m.extra;if(m.macro)COUNTRY_MACRO=m.macro;if(m.cfg)COUNTRY_CFG=m.cfg;
+}
+function saveLocal(){
+  try{
+    localStorage.setItem("sg_kingdom",JSON.stringify({v:3,rules:RULES,meta:packState(),countries:DATA}));
+    toast("已保存到本机浏览器");
+  }catch(e){toast("保存失败："+e.message);}
+}
+function loadLocal(){
+  try{
+    var s=localStorage.getItem("sg_kingdom");
+    if(!s){toast("没有找到本机备份");return;}
+    var o=JSON.parse(s);
+    if(o.rules)RULES=o.rules;
+    if(o.meta)restoreMeta(o.meta);
+    if(Array.isArray(o.countries)&&o.countries.length)DATA=o.countries.map(normalizeTree);
+    model=DATA[state.country]||generate(state.country);
+    syncAreaMode();renderRules();refreshAll();toast("已读取本机备份");
+  }catch(e){toast("读取失败："+e.message);}
+}
+function clearLocal(){localStorage.removeItem("sg_kingdom");toast("已清除本机备份");}
+$("saveLocal").addEventListener("click",saveLocal);
+$("loadLocal").addEventListener("click",loadLocal);
+$("clearLocal").addEventListener("click",clearLocal);
+
+function parentIdOf(id){var p=id.lastIndexOf(".");return p>0?id.slice(0,p):null;}
+function buildFromRows(rows){
+  var map={},order=[];
+  rows.forEach(function(r){
+    var nm=String(r["国家"]||"").trim();if(!nm)return;
+    var id=String(r["编号"]),type=String(r["级别"]||"国").trim();
+    var area=num(r["面积"]);
+    var m={area:area};
+    allItems().forEach(function(k){if(k!=="area")m[k]=num(r[METRIC_NAME_ZH(k)]);});
+    var nm2=String(r["名称"]||"").trim();
+    var terr=String(r["地形"]||"").trim();
+    var n={type:type,id:id,area:area,name:(type==="国"?nm:nm2||null),terrain:(TERRAINS.indexOf(terr)>=0?terr:randomTerrain(type)),m:m,children:[]};
+    if(type==="国"){n.rank=0;}
+    if(!map[nm]){map[nm]={nodes:{}};order.push(nm);}
+    map[nm].nodes[id]=n;
+  });
+  order.forEach(function(nm){
+    var nodes=map[nm].nodes;
+    rows.forEach(function(r){
+      if(String(r["国家"]||"").trim()!==nm)return;
+      var n=nodes[String(r["编号"])];if(!n||n.type==="国")return;
+      var pid=parentIdOf(n.id);var par=pid?nodes[pid]:null;
+      (par||nodes[Object.keys(nodes).filter(function(k){return nodes[k].type==="国";})[0]]||{}).children.push(n);
+    });
+  });
+  return {map:map,order:order};
+}
+$("fileExcel").addEventListener("change",function(){
+  var f=this.files[0];if(!f)return;this.value="";
+  var rd=new FileReader();
+  rd.onload=function(){
+    try{
+      if(!window.XLSX)throw "SheetJS 未加载";
+      var wb=XLSX.read(rd.result,{type:"array"});
+      var det=XLSX.utils.sheet_to_json(wb.Sheets["明细"]);
+      if(!det.length)throw "明细表为空";
+      var built=buildFromRows(det);
+      var newData=[];
+      COUNTRIES.forEach(function(c,i){
+        var hit=null;
+        built.order.forEach(function(nm){if(built.map[nm].nodes[Object.keys(built.map[nm].nodes).filter(function(k){return built.map[nm].nodes[k].type==="国";})[0]]&&built.map[nm].nodes[Object.keys(built.map[nm].nodes).filter(function(k){return built.map[nm].nodes[k].type==="国";})[0]].name===c.name)hit=built.map[nm].nodes[Object.keys(built.map[nm].nodes).filter(function(k){return built.map[nm].nodes[k].type==="国";})[0]];});
+        newData.push(hit||DATA[i]||null);
+      });
+      DATA=newData;
+      model=DATA[state.country]||generate(state.country);
+      if(wb.Sheets["规则"]){
+        var ru=XLSX.utils.sheet_to_json(wb.Sheets["规则"]);
+        ru.forEach(function(r){
+          var key=null;allItems().forEach(function(k){if(METRIC_NAME_ZH(k)===String(r["指标"]))key=k;});
+          if(!key)return;
+          if(key==null)return;
+          for(var lv=0;lv<6;lv++){
+            if(r[LVL_NAME[lv]+"下限"]!=null)RULES[key].min[lv]=num(r[LVL_NAME[lv]+"下限"]);
+            if(r[LVL_NAME[lv]+"上限"]!=null)RULES[key].max[lv]=num(r[LVL_NAME[lv]+"上限"]);
+          }
+        });
+        renderRules();
+      }
+      refreshAll();toast("已导入 Excel");
+    }catch(e){toast("Excel 导入失败："+e.message);}
+  };
+  rd.readAsArrayBuffer(f);
+});
+
+/* ================= 页签切换 ================= */
+Array.prototype.forEach.call($("tabnav").querySelectorAll("button"),function(b){
+  b.onclick=function(){
+    document.querySelectorAll(".tabnav button").forEach(function(x){x.classList.remove("on");});
+    b.classList.add("on");
+    var t=b.getAttribute("data-tab");
+    document.querySelectorAll(".tab").forEach(function(x){x.classList.remove("on");});
+    $("tab-"+t).classList.add("on");
+    if(t==="viz")renderViz();
+    if(t==="overview"&&ovChart)ovChart.resize();
+  };
+});
+function bindSegFn(id,fn){
+  var seg=$(id);
+  seg.querySelectorAll("button").forEach(function(b){
+    b.onclick=function(){
+      seg.querySelectorAll("button").forEach(function(x){x.classList.remove("on");});
+      b.classList.add("on");fn(b.getAttribute("data-v"));
+    };
+  });
+}
+bindSegFn("treeViewMode",function(v){
+  $("treePane").style.display=v==="tree"?"block":"none";
+  $("tablePane").style.display=v==="table"?"block":"none";
+  if(v==="table")renderFullTable();
+});
+bindSegFn("vizMode",function(){renderViz();});
+
+/* ================= 国家选择 ================= */
+function updateCountrySelects(){
+  ["country","countryMacro","countryTree","countryViz"].forEach(function(id){
+    var sel=$(id);
+    sel.innerHTML=COUNTRIES.map(function(c,i){return '<option value="'+i+'">'+c.name+'（权重 '+c.pow+'）</option>';}).join("");
+  });
+  syncCountrySelects();
+}
+function syncCountrySelects(){
+  ["country","countryMacro","countryTree","countryViz"].forEach(function(id){$(id).value=state.country;});
+}
+function setCountry(idx){
+  state.country=+idx;
+  if(!DATA[idx])DATA[idx]=generate(idx);
+  model=DATA[idx];
+  syncCountrySelects();syncAreaMode();refreshAll();
+}
+["country","countryMacro","countryTree","countryViz"].forEach(function(id){
+  $(id).addEventListener("change",function(){setCountry(this.value);});
+});
+
+/* ================= 交互绑定 ================= */
+function bindSeg(id,key){
+  var seg=$(id);
+  seg.querySelectorAll("button").forEach(function(b){
+    b.onclick=function(){
+      seg.querySelectorAll("button").forEach(function(x){x.classList.remove("on");});
+      b.classList.add("on");state[key]=b.getAttribute("data-v");
+    };
+  });
+}
+bindSeg("fTer","fTer");
+bindSeg("scaleMode","scale");
+bindSegFn("areaMode",function(v){COUNTRY_CFG[state.country].areaMode=v;syncAreaMode();});
+function syncAreaMode(){
+  var s=$("areaMode"),mode=COUNTRY_CFG[state.country].areaMode;
+  s.querySelectorAll("button").forEach(function(x){x.classList.toggle("on",x.getAttribute("data-v")===mode);});
+  $("areaInput").style.display=mode==="manual"?"block":"none";
+  $("areaInput").value=COUNTRY_CFG[state.country].areaInput;
+}
+$("areaInput").addEventListener("input",function(){COUNTRY_CFG[state.country].areaInput=num(this.value);});
+$("jx").addEventListener("change",function(){state.jx=this.checked;});
+$("ysOn").addEventListener("change",function(){state.ysOn=this.checked;});
+$("ysMinus").addEventListener("click",function(){state.ys=Math.max(0,state.ys-1);$("ysVal").textContent=state.ys;});
+$("ysPlus").addEventListener("click",function(){state.ys=Math.min(6,state.ys+1);$("ysVal").textContent=state.ys;});
+$("genAll").addEventListener("click",runAll);
+$("regenCur").addEventListener("click",function(){regenerate(state.country);refreshAll();});
+$("genCountry").addEventListener("click",function(){regenerate(state.country);refreshAll();});
+$("genMacro").addEventListener("click",function(){regenerate(state.country);refreshAll();});
+
+/* ================= 主流程 ================= */
+function refreshAll(){
+  renderCards();
+  renderOverview();
+  renderMacro();
+  renderTree();
+  renderTreePrev();
+  renderFullTable();
+  renderViz();
+  renderNotes();
+}
+function renderNotes(){
+  $("notes").innerHTML=
+    "操作说明：① 总览页「生成全区划」会一次性生成 10 国（未编辑的国按默认战力随机生成）；② 在「国家与规模 / 国之宏观」页签选中一国，改完点「重算当前国」仅重建该国；③ 行政树可逐级折叠编辑，或切到「全量表格」一次看全所有单位的全部指标；④ 规则表可改各级 9 项指标上下限；⑤ 数据可导出 Excel / JSON，也可导入后继续编辑。&nbsp;&nbsp;"+
+    "软窗口：下级之和恒等于上级（面积精确、其余近似）；当国之宏观数值超过某级窗口上限时自动放宽，避免失真。";
+}
+window.addEventListener("resize",function(){
+  if(chart)chart.resize();
+  if(radarChart)radarChart.resize();
+  if(ovChart)ovChart.resize();
+});
+
+/* ================= 启动 ================= */
+updateCountrySelects();
+renderRules();bindRules();
+syncAreaMode();
+$("ysVal").textContent=state.ys;
+runAll();
+</script>
+
+</div>
+</body>
+</html>
