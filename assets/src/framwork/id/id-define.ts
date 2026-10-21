@@ -1,7 +1,7 @@
 export enum IdType {
     World = "world",
-    /** 事件ID */
-    Event = "event",
+    /** 任务ID */
+    Task = "task",
     /** 活动ID */
     Activity = "activity",
     /** 场景ID */

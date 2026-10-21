@@ -1,5 +1,5 @@
-export class EventData {
-    /** 事件ID */
+export class TaskData {
+    /** 任务ID */
     private _id: string = "";
     public get Id(): string {
         return this._id;

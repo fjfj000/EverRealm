@@ -162,6 +162,10 @@ export default class MinHeap<T = number> {
         this.mergeSameOrder(incoming);
     }
 
+    public indexOf(value: T): number {
+        return this._heap.indexOf(value);
+    }
+
     private buildHeap(): void {
         // 最后一个父节点是 floor(n / 2) - 1。再往右都是叶子，下沉没有意义。
         for (let index = Math.floor(this._heap.length / 2) - 1; index >= 0; index--) {
@@ -216,7 +220,10 @@ export default class MinHeap<T = number> {
             }
             let smallestIndex = leftChildIndex;
             const rightChildIndex = leftChildIndex + 1;
-            if (rightChildIndex < length && this.isLess(heap[rightChildIndex], heap[leftChildIndex])) {
+            if (
+                rightChildIndex < length &&
+                this.isLess(heap[rightChildIndex], heap[leftChildIndex])
+            ) {
                 smallestIndex = rightChildIndex;
             }
             if (!this.isLess(heap[smallestIndex], value)) {
@@ -248,7 +255,8 @@ export default class MinHeap<T = number> {
             return;
         }
         let prefixSize = currentSize;
-        const merged = currentSize >= incomingSize ? current.concat(incoming) : incoming.concat(current);
+        const merged =
+            currentSize >= incomingSize ? current.concat(incoming) : incoming.concat(current);
         if (currentSize < incomingSize) {
             prefixSize = incomingSize;
         }
@@ -269,7 +277,11 @@ export default class MinHeap<T = number> {
             return undefined;
         }
         const normalized = Math.floor(index);
-        if (!Number.isSafeInteger(normalized) || normalized < 0 || normalized >= this._heap.length) {
+        if (
+            !Number.isSafeInteger(normalized) ||
+            normalized < 0 ||
+            normalized >= this._heap.length
+        ) {
             return undefined;
         }
         return normalized;
@@ -292,5 +304,9 @@ export default class MinHeap<T = number> {
             throw new Error("MinHeap 比较函数必须返回有限数字");
         }
         return result < 0;
+    }
+
+    [Symbol.iterator](): Iterator<T> {
+        return this._heap[Symbol.iterator]();
     }
 }
