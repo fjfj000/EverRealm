@@ -1,14 +1,22 @@
 type AnyListener = (...args: any[]) => void;
 
 /** `listen_xxx` 中下划线后面的部分就是事件名，空名字不算事件。 */
-type ListenEventName<Name> = Name extends `listen_${infer EventName}` ? (EventName extends "" ? never : EventName) : never;
+type ListenEventName<Name> = Name extends `listen_${infer EventName}`
+    ? EventName extends ""
+        ? never
+        : EventName
+    : never;
 
 /**
  * 每个 listen_xxx 方法对应一个事件，回调参数就是该方法的参数列表。
  * 事件名和参数从子类实例的实际类型推出来。
  */
 export type ListenEventMap<Target> = {
-    [MethodName in keyof Target as ListenEventName<MethodName>]: Target[MethodName] extends (...args: infer Args) => unknown ? Args : never;
+    [MethodName in keyof Target as ListenEventName<MethodName>]: Target[MethodName] extends (
+        ...args: infer Args
+    ) => unknown
+        ? Args
+        : never;
 };
 
 type ListenHost = Record<string, (...args: unknown[]) => unknown>;
@@ -17,7 +25,10 @@ type ListenHost = Record<string, (...args: unknown[]) => unknown>;
  * 泛型事件名要等调用处写死之后，参数元组才能展开。
  * 条件类型把这次展开推迟到那一步。
  */
-type ListenHandler<Target, EventName extends keyof ListenEventMap<Target>> = ListenEventMap<Target>[EventName] extends infer Args
+type ListenHandler<
+    Target,
+    EventName extends keyof ListenEventMap<Target>
+> = ListenEventMap<Target>[EventName] extends infer Args
     ? Args extends any[]
         ? (...args: Args) => void
         : never
@@ -32,6 +43,13 @@ export class TargetObserver {
     /** 按事件名保存监听函数。auto 事件和普通事件共用这张表。 */
     private _listener: Map<string, Set<AnyListener>> = new Map();
 
+    protected _id: string = "";
+    public get Id(): string {
+        return this._id;
+    }
+    public set Id(value: string) {
+        this._id = value;
+    }
     public constructor() {
         this._wrapListenMethods();
     }
@@ -57,7 +75,7 @@ export class TargetObserver {
     /** 监听 listen_xxx 对应的 xxx 事件，事件名和回调参数有类型提示。 */
     public auto_on<EventName extends keyof ListenEventMap<this> & string>(
         eventName: EventName,
-        listener: ListenHandler<this, EventName>,
+        listener: ListenHandler<this, EventName>
     ): void {
         this._addListener(eventName, listener as AnyListener);
     }
@@ -68,7 +86,7 @@ export class TargetObserver {
      */
     public auto_off<EventName extends keyof ListenEventMap<this> & string>(
         eventName: EventName,
-        listener?: ListenHandler<this, EventName>,
+        listener?: ListenHandler<this, EventName>
     ): void {
         this._removeListener(eventName, listener as AnyListener | undefined);
     }
