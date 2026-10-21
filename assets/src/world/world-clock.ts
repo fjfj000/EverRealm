@@ -1,7 +1,16 @@
 import { TargetObserver } from "../framwork/observer/target-observer";
-import { advanceGameSeconds, countGameUnitsCrossed, GameTimeUnit, gameTimeRemainder } from "../framwork/utils/date-utils";
+import { advanceGameSeconds } from "../framwork/utils/date-utils";
 import { setInstance } from "../framwork/utils/instance";
 import { WorldConfig } from "./world-define";
+
+/** 秒、分满 60 进位，时满 24，日满 30，月满 12。日和月的计数从 1 开始。 */
+const CLOCK_LIMIT = {
+    second: 60,
+    minute: 60,
+    hour: 24,
+    day: 30,
+    month: 12,
+} as const;
 
 /**
  * 需要持久化的世界时钟。
@@ -17,8 +26,9 @@ export interface WorldClockRecord {
 
 /**
  * 世界时钟。只负责游戏时间。
- * 暂停或倍速为 0 时，游戏时间不动。真实时间由 RealTimeCounter 单独累计，本类不引用它。
- * 倍速改了以后只影响之后的 Tick，不回算以前的累计值。
+ * 秒、分、时、日、月、年保存在计数里，界面直接读取。
+ * 某一档进位时才通知一次；同一次 Tick 里同一档只通知一次。
+ * 暂停或倍速为 0 时，游戏时间不动。
  */
 @setInstance
 export class WorldClock extends TargetObserver {
@@ -29,9 +39,45 @@ export class WorldClock extends TargetObserver {
     /** 世界是否在运行。暂停只停游戏时间。 */
     private _enableTick: boolean = false;
 
-    /** 累计游戏时间，秒。 */
+    /** 当前分钟内的秒，含不足 1 秒的小数。 */
+    private _second: number = 0;
+    /** 当前小时内的分，0 到 59。 */
+    private _minute: number = 0;
+    /** 当天的时，0 到 23。 */
+    private _hour: number = 0;
+    /** 当月的日，1 到 30。 */
+    private _day: number = 1;
+    /** 当年的月，1 到 12。 */
+    private _month: number = 1;
+    /** 第几年，从 1 开始，不回头。 */
+    private _year: number = 1;
+
     public get TotalGameTime(): number {
         return this._totalGameTime;
+    }
+
+    public get Second(): number {
+        return this._second;
+    }
+
+    public get Minute(): number {
+        return this._minute;
+    }
+
+    public get Hour(): number {
+        return this._hour;
+    }
+
+    public get Day(): number {
+        return this._day;
+    }
+
+    public get Month(): number {
+        return this._month;
+    }
+
+    public get Year(): number {
+        return this._year;
     }
 
     /** 当前倍速。修改只影响之后的时间，不改累计游戏时间。 */
@@ -75,9 +121,7 @@ export class WorldClock extends TargetObserver {
         if (gameDelta === 0) {
             return;
         }
-        const beforeGameTime = this._totalGameTime;
-        this._totalGameTime = beforeGameTime + gameDelta;
-        this._emitCalendar(beforeGameTime, this._totalGameTime);
+        this._stepClock(gameDelta);
     }
 
     /** 导出需要持久化的游戏时间和当前倍速。 */
@@ -90,84 +134,135 @@ export class WorldClock extends TargetObserver {
 
     /**
      * 读入存档。
-     * 游戏时间先停住。读档不会补发中间越过的日、月、年事件。
+     * 游戏时间先停住。计数从累计秒数摆一次，不补发中间的日、月、年事件。
      */
     public Load(record: WorldClockRecord): void {
         if (!record) {
             throw new Error("缺少时钟存档");
         }
-        this._totalGameTime = this._readPlayTime(record.totalGameTime, "累计游戏时间");
+        const totalGameTime = this._readPlayTime(record.totalGameTime, "累计游戏时间");
         if (typeof record.timeSpeed !== "number" || !Number.isFinite(record.timeSpeed) || record.timeSpeed < 0) {
             throw new Error("存档里的时间倍速必须是非负有限数字");
         }
         this._timeSpeed = record.timeSpeed;
         WorldConfig.TimeSpeed = record.timeSpeed;
         this._enableTick = false;
+        this._placeClock(totalGameTime);
     }
 
-    public listen_min(remainder: number, crossed: number): void {
-        void remainder;
-        void crossed;
+    /** 秒进位时触发一次。参数是进位后的当前秒。 */
+    public listen_second(second: number): void {
+        void second;
     }
 
-    public listen_hour(remainder: number, crossed: number): void {
-        void remainder;
-        void crossed;
+    /** 分进位时触发一次。参数是进位后的当前分。 */
+    public listen_min(minute: number): void {
+        void minute;
     }
 
-    public listen_day(remainder: number, crossed: number): void {
-        void remainder;
-        void crossed;
+    /** 时进位时触发一次。参数是进位后的当前时。 */
+    public listen_hour(hour: number): void {
+        void hour;
     }
 
-    public listen_month(remainder: number, crossed: number): void {
-        void remainder;
-        void crossed;
+    /** 日进位时触发一次。参数是进位后的当前日。 */
+    public listen_day(day: number): void {
+        void day;
     }
 
-    public listen_year(remainder: number, crossed: number): void {
-        void remainder;
-        void crossed;
+    /** 月进位时触发一次。参数是进位后的当前月。 */
+    public listen_month(month: number): void {
+        void month;
     }
 
-    /** 用累计游戏时间的前后位置判断越过了几段，避免大步长只扣一次上限。 */
-    private _emitCalendar(beforeGameTime: number, afterGameTime: number): void {
-        this._emitUnit(beforeGameTime, afterGameTime, GameTimeUnit.minute, this.listen_min);
-        this._emitUnit(beforeGameTime, afterGameTime, GameTimeUnit.hour, this.listen_hour);
-        this._emitUnit(beforeGameTime, afterGameTime, GameTimeUnit.day, this.listen_day);
-        this._emitUnit(beforeGameTime, afterGameTime, GameTimeUnit.month, this.listen_month);
-        this._emitUnit(beforeGameTime, afterGameTime, GameTimeUnit.year, this.listen_year);
+    /** 年进位时触发一次。参数是进位后的当前年。 */
+    public listen_year(year: number): void {
+        void year;
     }
 
-    private _emitUnit(
-        beforeGameTime: number,
-        afterGameTime: number,
-        unit: number,
-        callback: (remainder: number, crossed: number) => void
-    ): void {
-        const unitName = this._unitName(unit);
-        const crossed = countGameUnitsCrossed(beforeGameTime, afterGameTime, unitName);
-        if (crossed <= 0) {
+    /**
+     * 把新增的游戏秒加进秒针，满一档就进位。
+     * 没满的档不会通知；同一档这次最多通知一次。
+     */
+    private _stepClock(gameDelta: number): void {
+        this._totalGameTime += gameDelta;
+        const previousSecond = this._second;
+        this._second += gameDelta;
+
+        const minuteCarry = this._carry(this._second, CLOCK_LIMIT.second);
+        this._second = minuteCarry.rest;
+        if (Math.floor(previousSecond + gameDelta) > Math.floor(previousSecond)) {
+            this.listen_second(this._second);
+        }
+        if (minuteCarry.carry === 0) {
             return;
         }
-        callback(gameTimeRemainder(afterGameTime, unitName), crossed);
+
+        const hourCarry = this._carry(this._minute + minuteCarry.carry, CLOCK_LIMIT.minute);
+        this._minute = hourCarry.rest;
+        this.listen_min(this._minute);
+        if (hourCarry.carry === 0) {
+            return;
+        }
+
+        const dayCarry = this._carry(this._hour + hourCarry.carry, CLOCK_LIMIT.hour);
+        this._hour = dayCarry.rest;
+        this.listen_hour(this._hour);
+        if (dayCarry.carry === 0) {
+            return;
+        }
+
+        const monthCarry = this._carryFromOne(this._day + dayCarry.carry, CLOCK_LIMIT.day);
+        this._day = monthCarry.rest;
+        this.listen_day(this._day);
+        if (monthCarry.carry === 0) {
+            return;
+        }
+
+        const yearCarry = this._carryFromOne(this._month + monthCarry.carry, CLOCK_LIMIT.month);
+        this._month = yearCarry.rest;
+        this.listen_month(this._month);
+        if (yearCarry.carry === 0) {
+            return;
+        }
+
+        this._year += yearCarry.carry;
+        this.listen_year(this._year);
     }
 
-    private _unitName(unit: number): "minute" | "hour" | "day" | "month" | "year" {
-        switch (unit) {
-            case GameTimeUnit.minute:
-                return "minute";
-            case GameTimeUnit.hour:
-                return "hour";
-            case GameTimeUnit.day:
-                return "day";
-            case GameTimeUnit.month:
-                return "month";
-            case GameTimeUnit.year:
-                return "year";
-            default:
-                throw new Error("未知的游戏时间单位");
+    /** 读档时按累计秒数摆好钟面，不发进位事件。 */
+    private _placeClock(totalGameTime: number): void {
+        this._totalGameTime = totalGameTime;
+        const minute = this._carry(totalGameTime, CLOCK_LIMIT.second);
+        this._second = minute.rest;
+        const hour = this._carry(minute.carry, CLOCK_LIMIT.minute);
+        this._minute = hour.rest;
+        const day = this._carry(hour.carry, CLOCK_LIMIT.hour);
+        this._hour = day.rest;
+        const month = this._carry(day.carry, CLOCK_LIMIT.day);
+        this._day = month.rest + 1;
+        const year = this._carry(month.carry, CLOCK_LIMIT.month);
+        this._month = year.rest + 1;
+        this._year = year.carry + 1;
+    }
+
+    /** 0 起始的计数。满 limit 就进一位，余数留在 rest。 */
+    private _carry(value: number, limit: number): { rest: number; carry: number } {
+        if (value < limit) {
+            return { rest: value, carry: 0 };
         }
+        const carry = Math.floor(value / limit);
+        return { rest: value - carry * limit, carry };
+    }
+
+    /** 1 起始的日、月。第 30 日再加 1 天才进月，第 12 月再加 1 才进年。 */
+    private _carryFromOne(value: number, limit: number): { rest: number; carry: number } {
+        const offset = value - 1;
+        if (offset < limit) {
+            return { rest: value, carry: 0 };
+        }
+        const carry = Math.floor(offset / limit);
+        return { rest: offset - carry * limit + 1, carry };
     }
 
     private _readPlayTime(value: number, name: string): number {

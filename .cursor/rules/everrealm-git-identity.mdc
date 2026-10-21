@@ -1,0 +1,23 @@
+---
+description: EverRealm 提交时使用的作者名和邮箱
+alwaysApply: true
+---
+
+# EverRealm 提交身份
+
+在本仓库创建 Git 提交时，作者和提交者使用：
+
+- 名称：`vv_ciki`
+- 邮箱：`1074717218@qq.com`
+
+只通过本次命令的环境变量设置，不要修改本机或仓库的 `git config`：
+
+```bash
+GIT_AUTHOR_NAME=vv_ciki \
+GIT_AUTHOR_EMAIL=1074717218@qq.com \
+GIT_COMMITTER_NAME=vv_ciki \
+GIT_COMMITTER_EMAIL=1074717218@qq.com \
+git commit
+```
+
+推送仍使用对 `fjfj000/EverRealm` 有写权限的凭证。邮箱用于让 GitHub 把提交关联到对应账号，不能代替推送令牌或 SSH 密钥。

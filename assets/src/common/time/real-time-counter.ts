@@ -47,6 +47,11 @@ export class RealTimeCounter {
         this._sessionActive = false;
     }
 
+    /** 继续这一次游玩。单次时间接着停住前的值，不清零。 */
+    public ResumeSession(): void {
+        this._sessionActive = true;
+    }
+
     /**
      * 推进一段真实时间。
      * realSeconds 是这段墙上时间里，用户还留在这一次游玩中的秒数。
