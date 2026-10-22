@@ -52,6 +52,19 @@ export class DirectAddressTable<T> {
         return this._size === 0;
     }
 
+    /**
+     * 清空整张表。
+     * 空表直接返回。有数据时位图一次置 0，桶换成空 Map，元素数组交给回收，不逐条删除。
+     */
+    public clear(): void {
+        if (this._size === 0) {
+            return;
+        }
+        this._size = 0;
+        this._buckets = new Map();
+        this._bits.fill(0);
+    }
+
     /** 当前最小单位上的第一条，不取出。 */
     public get peek(): T | undefined {
         const slot = this._nextOccupiedSlot();
@@ -103,6 +116,31 @@ export class DirectAddressTable<T> {
         return value;
     }
 
+    /**
+     * 从指定槽起读第一条还在的元素，包含这个槽。
+     * 只读 head 指向的队头，不移动 head。
+     */
+    public readNextFromSlot(slot: number): { value: T; slot: number } | undefined {
+        let startSlot = slot;
+        const slotCount = this._maxUnit - this._minUnit + 1;
+        while (startSlot < slotCount) {
+            const nextSlot = this._nextOccupiedSlot(startSlot);
+            if (nextSlot === undefined) {
+                return undefined;
+            }
+            const bucket = this._buckets.get(nextSlot);
+            if (!bucket || bucket.head >= bucket.items.length) {
+                startSlot = nextSlot + 1;
+                continue;
+            }
+            return {
+                value: bucket.items[bucket.head],
+                slot: nextSlot,
+            };
+        }
+        return undefined;
+    }
+
     /** 按引用移除。找不到返回 false。 */
     public remove(unit: number, value: T): boolean {
         const slot = this._slotOf(unit);
@@ -122,11 +160,58 @@ export class DirectAddressTable<T> {
         return false;
     }
 
-    /** 从最小单位扫位图。执行中插入更小的单位，下一次取出也能拿到。 */
-    private _nextOccupiedSlot(): number | undefined {
+    /**
+     * 按槽从小到大遍历还没取走的元素。不移动 head，避免影响 popNext。
+     * 更小的槽在遍历途中插入，不再读到。当前槽里还没读到的位置，以及更后面的槽，会读到。
+     */
+    public [Symbol.iterator](): Iterator<T> {
+        let slot = -1;
+        let lastIndex = 0;
+        let lastValue: T | undefined;
+
+        return {
+            next: (): IteratorResult<T> => {
+                if (slot >= 0) {
+                    const bucket = this._buckets.get(slot);
+                    const nextIndex = bucket ? this._indexAfter(bucket, lastValue as T, lastIndex) : 0;
+                    if (bucket && nextIndex < bucket.items.length) {
+                        lastIndex = nextIndex;
+                        lastValue = bucket.items[nextIndex];
+                        return { value: lastValue, done: false };
+                    }
+                }
+
+                const found = this.readNextFromSlot(slot + 1);
+                if (!found) {
+                    return { value: undefined as T, done: true };
+                }
+                const bucket = this._buckets.get(found.slot);
+                slot = found.slot;
+                lastValue = found.value;
+                lastIndex = bucket ? bucket.items.indexOf(found.value, bucket.head) : 0;
+                return { value: lastValue, done: false };
+            },
+        };
+    }
+
+    /**
+     * 从 startSlot 起找下一个有元素的槽，包含 startSlot。
+     * 不传时从最小槽开始。popNext 依赖这一点：执行中插入更小的单位，下一次取出也能拿到。
+     */
+    private _nextOccupiedSlot(startSlot: number = 0): number | undefined {
         const bits = this._bits;
-        for (let wordIndex = 0; wordIndex < bits.length; wordIndex++) {
+        if (startSlot < 0) {
+            startSlot = 0;
+        }
+        const wordIdx = startSlot >>> 5;
+        const startBit = startSlot & 31;
+        for (let wordIndex = wordIdx; wordIndex < bits.length; wordIndex++) {
             let word = bits[wordIndex];
+            // 同一个字里，起点之前的位清掉。更早的槽不参与这次查找。
+            if (wordIndex === wordIdx && startBit > 0) {
+                const mask = (0xffffffff << startBit) >>> 0;
+                word = (word & mask) >>> 0;
+            }
             if (word === 0) {
                 continue;
             }
@@ -138,6 +223,19 @@ export class DirectAddressTable<T> {
             return wordIndex * BIT_WORD_BITS + bit;
         }
         return undefined;
+    }
+
+    /**
+     * 返回排在 value 后面的第一个下标。
+     * fromIndex 是上次读到它的位置。同一引用出现多次时，从这里往后找，避免又回到前一个。
+     */
+    private _indexAfter(bucket: UnitBucket<T>, value: T, fromIndex: number): number {
+        const start = Math.max(fromIndex, bucket.head);
+        const found = bucket.items.indexOf(value, start);
+        if (found !== -1) {
+            return found + 1;
+        }
+        return this._findInsertIndex(bucket, value);
     }
 
     private _findInsertIndex(bucket: UnitBucket<T>, value: T): number {
