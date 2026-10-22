@@ -25,7 +25,42 @@ export class TaskBase extends PropertyObserver {
         return this._state;
     }
     public set State(value: TaskState) {
+        const beforeState = this._state;
+        if (beforeState === value) {
+            return;
+        }
         this._state = value;
+        // 事件名是 `${Id}_${TaskState}`，TaskState 用枚举值，参数是变更前、变更后。
+        // 必须在本次赋值返回前同步发出。外部把状态改成 Dead 后就会摘掉任务，晚发就听不到这次删除。
+        this.emit(this._stateEventName(value), beforeState, value);
+    }
+
+    /**
+     * 监听进入某个状态。
+     * 事件名由任务 Id 拼出来，调用处只选状态，afterState 会收窄到这一个枚举值。
+     * Id 在运行时才生成，完整事件名做不成编译期字面量提示。
+     */
+    public on_state<State extends TaskState>(
+        state: State,
+        listener: (beforeState: TaskState, afterState: State) => void
+    ): void {
+        this.on(this._stateEventName(state), listener);
+    }
+
+    /**
+     * 注销状态监听。
+     * 传入 listener 时只移除这一条；不传则移除该状态的全部监听。
+     */
+    public off_state<State extends TaskState>(
+        state: State,
+        listener?: (beforeState: TaskState, afterState: State) => void
+    ): void {
+        this.off(this._stateEventName(state), listener);
+    }
+
+    /** `${Id}_${TaskState}` */
+    private _stateEventName(state: TaskState): string {
+        return `${this.Id}_${state}`;
     }
 
     /** 任务序列类型 */
