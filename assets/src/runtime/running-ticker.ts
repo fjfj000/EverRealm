@@ -2,6 +2,7 @@ import { director, ISchedulable } from "cc";
 import { RealTimeCounter } from "../common/time/real-time-counter";
 import { setInstance } from "../framwork/utils/instance";
 import { WorldClock } from "../world/world-clock";
+import { WorldDriver } from "../world/world-driver";
 
 /** 每秒驱动一次。真实计时和世界推进都按这一秒结算。 */
 const TICK_INTERVAL = 1;
@@ -11,6 +12,7 @@ const TICK_INTERVAL = 1;
  * 这里收成实例，避免调度器再 new 出一个时钟。
  */
 const worldClock = WorldClock as unknown as WorldClock;
+const worldDriver = WorldDriver as unknown as WorldDriver;
 
 /**
  * 运行时每秒调度。
@@ -35,7 +37,8 @@ export class RunningTicker implements ISchedulable {
 
     private _onSecond = (): void => {
         this._realTime.Tick(TICK_INTERVAL);
-        worldClock.Tick(TICK_INTERVAL);
+        // 真实秒先换成目标游戏时间，再按任务和日切边界推进。暂停只看世界时钟的 EnableTick。
+        worldDriver.advanceByRealSeconds(TICK_INTERVAL);
     };
 
     /** 开始新的一次游玩，并让世界时钟开始接收每秒推进。 */

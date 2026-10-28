@@ -102,6 +102,10 @@ export class WorldClock extends TargetObserver {
         this._enableTick = value;
     }
 
+    public init(): void {
+        //@todo 从数据库中加载世界时钟数据
+    }
+
     /**
      * 用一段真实秒数推进游戏时间。
      * 调用方在游戏暂停时不要调用，或者先把 EnableTick 设为 false。
@@ -141,7 +145,11 @@ export class WorldClock extends TargetObserver {
             throw new Error("缺少时钟存档");
         }
         const totalGameTime = this._readPlayTime(record.totalGameTime, "累计游戏时间");
-        if (typeof record.timeSpeed !== "number" || !Number.isFinite(record.timeSpeed) || record.timeSpeed < 0) {
+        if (
+            typeof record.timeSpeed !== "number" ||
+            !Number.isFinite(record.timeSpeed) ||
+            record.timeSpeed < 0
+        ) {
             throw new Error("存档里的时间倍速必须是非负有限数字");
         }
         this._timeSpeed = record.timeSpeed;
@@ -228,6 +236,42 @@ export class WorldClock extends TargetObserver {
 
         this._year += yearCarry.carry;
         this.listen_year(this._year);
+    }
+
+    /**
+     * 把时钟原子拨到绝对游戏秒。
+     * 只接受不早于当前时间的整数。不逐级发 listen_min/hour/day，那些事件不能当作任务顺序。
+     * 拨完后发一次 listen_advanced，订阅者异常不能把钟面留在中间态。
+     */
+    public moveTo(totalGameTime: number): void {
+        if (!Number.isInteger(totalGameTime) || totalGameTime < 0) {
+            throw new Error("目标游戏时间必须是非负整数秒");
+        }
+        if (totalGameTime < this._totalGameTime) {
+            throw new Error("游戏时间不能倒退");
+        }
+        if (totalGameTime === this._totalGameTime) {
+            return;
+        }
+        const fromTime = this._totalGameTime;
+        this._placeClock(totalGameTime);
+        this._notifyAdvanced(fromTime, totalGameTime);
+    }
+
+    /** 累计游戏时间已经到达 toTime。参数是推进前、推进后的累计游戏秒。 */
+    public listen_advanced(fromTime: number, toTime: number): void {
+        void fromTime;
+        void toTime;
+    }
+
+    /** 钟面已经写完再通知。监听器抛错只留下诊断，不回滚时间。 */
+    private _notifyAdvanced(fromTime: number, toTime: number): void {
+        try {
+            this.listen_advanced(fromTime, toTime);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            console.error(`世界时钟通知失败: ${message}`);
+        }
     }
 
     /** 读档时按累计秒数摆好钟面，不发进位事件。 */

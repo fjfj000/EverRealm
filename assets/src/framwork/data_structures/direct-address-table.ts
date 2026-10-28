@@ -141,6 +141,16 @@ export class DirectAddressTable<T> {
         return undefined;
     }
 
+    /** 读出某个单位里还没取走的元素。不移动 head。 */
+    public readUnit(unit: number): readonly T[] {
+        const slot = this._slotOf(unit);
+        const bucket = this._buckets.get(slot);
+        if (!bucket || bucket.head >= bucket.items.length) {
+            return [];
+        }
+        return bucket.items.slice(bucket.head);
+    }
+
     /** 按引用移除。找不到返回 false。 */
     public remove(unit: number, value: T): boolean {
         const slot = this._slotOf(unit);

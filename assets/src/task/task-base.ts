@@ -1,6 +1,12 @@
 import { IdType } from "../framwork/id/id-define";
 import { PropertyObserver } from "../framwork/observer/property-observer";
-import { TaskBlockType, TaskRepeatType, TaskSequenceType, TaskState } from "./task-define";
+import {
+    ITaskInfo,
+    TaskBlockType,
+    TaskRepeatType,
+    TaskSequenceType,
+    TaskState,
+} from "./task-define";
 
 export class TaskBase extends PropertyObserver {
     /**
@@ -10,7 +16,7 @@ export class TaskBase extends PropertyObserver {
         return IdType.Task;
     }
 
-    /** 任务优先级，数值越大优先级越高，越先执行 */
+    /** 任务优先级。数字小的先执行。 */
     private _priority: number = 0;
     public get Priority(): number {
         return this._priority;
@@ -33,6 +39,25 @@ export class TaskBase extends PropertyObserver {
         // 事件名是 `${Id}_${TaskState}`，TaskState 用枚举值，参数是变更前、变更后。
         // 必须在本次赋值返回前同步发出。外部把状态改成 Dead 后就会摘掉任务，晚发就听不到这次删除。
         this.emit(this._stateEventName(value), beforeState, value);
+    }
+
+    private _callback: (...args: any[]) => void;
+    public constructor(info: ITaskInfo) {
+        super();
+        this.startTime = info.startTime;
+        this._nextSettleAt = info.startTime;
+        this.endTime = info.endTime;
+        this._repeatType = info.repeatType;
+        this._repeatCount = info.repeatCount;
+        this._sequenceType = info.sequenceType;
+        this._blockType = info.blockType;
+        this._priority = info.priority;
+        this._callback = info.callback;
+    }
+
+    /** 调度器在提交通过后调用。回调不负责推进世界时间。 */
+    public run(now: number): void {
+        this._callback(now);
     }
 
     /**
@@ -79,6 +104,24 @@ export class TaskBase extends PropertyObserver {
     }
     public set BlockType(value: TaskBlockType) {
         this._blockType = value;
+    }
+
+    /** 下一次调度时间。周期任务完成后往后推，不改 StartTime。 */
+    private _nextSettleAt: number = 0;
+    public get NextSettleAt(): number {
+        return this._nextSettleAt;
+    }
+    public set NextSettleAt(value: number) {
+        this._nextSettleAt = value;
+    }
+
+    /** 同优先级下的稳定序号。数字小的先执行。 */
+    private _sequence: number = 0;
+    public get Sequence(): number {
+        return this._sequence;
+    }
+    public set Sequence(value: number) {
+        this._sequence = value;
     }
 
     /** 任务开始时间 */
