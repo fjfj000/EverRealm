@@ -365,6 +365,7 @@ check("两个旧读集不能先后覆盖同一实体", () => {
     assert(tasks.Pipeline.entities.version("stock") === 1, `版本 ${tasks.Pipeline.entities.version("stock")}`);
     const second = tasks.Pipeline.executions.list().find((execution) => execution.taskId === "second");
     assert(second?.status === TaskExecutionStatus.Failed, `第二次状态 ${second?.status}`);
+    assert(tasks.record("second")?.lifecycleState === TaskLifecycleState.Expired, "拒绝提交后任务应失效");
 });
 
 check("同一幂等键不会再次提交", () => {
@@ -1018,6 +1019,51 @@ check("读档后按类型重新绑定，并按恢复策略再发一次", () => {
     assert(started.tasks.Pipeline.executions.list()[0]?.attempt === 2, "重发应增加尝试次数");
 });
 
+check("Retry 沿用外部单号，Reissue 作废旧单", () => {
+    const play = (policy: TaskAsyncRecoveryPolicy) => {
+        const { driver, tasks } = boot(0);
+        const ids: string[] = [];
+        tasks.addRecord(
+            taskAt("job", 10, {
+                executionMode: TaskExecutionMode.Async,
+                asyncRecoveryPolicy: policy,
+                timeoutGameSeconds: 5,
+                causalityPolicy: TaskCausalityPolicy.Independent,
+            }),
+            (task) => {
+                const execution = tasks.Pipeline.executions
+                    .list()
+                    .find((item) => item.taskId === task.id && item.status === TaskExecutionStatus.Waiting);
+                if (!execution) {
+                    return;
+                }
+                ids.push(tasks.Pipeline.external.issue(task, execution));
+            }
+        );
+        driver.advanceSlice(10, BUDGET);
+        driver.advanceSlice(20, BUDGET);
+        return { driver, tasks, ids };
+    };
+    const retry = play(TaskAsyncRecoveryPolicy.Retry);
+    assert(retry.ids.length === 2 && retry.ids[0] === retry.ids[1], `Retry 单号 ${retry.ids.join(",")}`);
+    assert(retry.tasks.Pipeline.external.pendingIds().indexOf(retry.ids[0]) >= 0, "原单应仍可完成");
+    const reissue = play(TaskAsyncRecoveryPolicy.Reissue);
+    assert(reissue.ids.length === 2 && reissue.ids[0] !== reissue.ids[1], `Reissue 单号 ${reissue.ids.join(",")}`);
+    assert(reissue.tasks.Pipeline.external.pendingIds().indexOf(reissue.ids[0]) < 0, "旧单应作废");
+    reissue.tasks.Pipeline.external.complete(reissue.ids[0], {
+        readSet: { stock: 0 },
+        commands: [{ entityKey: "stock", value: 1 }],
+    });
+    reissue.driver.advanceSlice(20, BUDGET);
+    assert(reissue.tasks.Pipeline.entities.value("stock") === undefined, "旧单结果不能提交");
+    reissue.tasks.Pipeline.external.complete(reissue.ids[1], {
+        readSet: { stock: 0 },
+        commands: [{ entityKey: "stock", value: 4 }],
+    });
+    reissue.driver.advanceSlice(20, BUDGET);
+    assert(reissue.tasks.Pipeline.entities.value("stock") === 4, `新单库存 ${reissue.tasks.Pipeline.entities.value("stock")}`);
+});
+
 check("活动 revision 变化后旧边界不再执行", () => {
     const { driver, tasks } = boot(0);
     const activities = Instance(ActivityManager) as ActivityManager;
@@ -1049,6 +1095,25 @@ check("长周期任务只保留下一次边界，短窗口任务仍会结算", (
     assert(tasks.record("long")?.nextSettleAt === 20 * day, "只安排下一次边界");
 });
 
+check("未来日表跟着今天覆盖其后五年", () => {
+    const day = 86400;
+    const near = boot(0);
+    near.driver.advanceSlice(10 * day, BUDGET);
+    near.tasks.addRecord(taskAt("inside", (10 + FUTURE_DAY_WINDOW - 1) * day));
+    near.tasks.addRecord(taskAt("outside", (10 + FUTURE_DAY_WINDOW) * day));
+    assert(near.tasks.Schedule.locate(near.tasks.record("inside")!) === "future", "今天起五年内应进未来表");
+    assert(near.tasks.Schedule.locate(near.tasks.record("outside")!) === "overflow", "刚过五年应进 overflow");
+    near.driver.advanceSlice(11 * day, BUDGET);
+    assert(near.tasks.Schedule.locate(near.tasks.record("outside")!) === "future", "今天前进一天后应迁入未来表");
+
+    const late = boot(0);
+    late.driver.advanceSlice((FUTURE_DAY_WINDOW + 30) * day, BUDGET);
+    late.tasks.addRecord(taskAt("year6", (FUTURE_DAY_WINDOW + 40) * day));
+    late.tasks.addRecord(taskAt("too-far", (FUTURE_DAY_WINDOW + 30 + FUTURE_DAY_WINDOW) * day));
+    assert(late.tasks.Schedule.locate(late.tasks.record("year6")!) === "future", "第六年之后近任务应进未来表");
+    assert(late.tasks.Schedule.locate(late.tasks.record("too-far")!) === "overflow", "再过五年应进 overflow");
+});
+
 check("滚动窗口会把溢出任务迁回，并接住新的远期任务", () => {
     const day = 86400;
     const { clock, driver, tasks } = boot(0);
@@ -1066,6 +1131,29 @@ check("滚动窗口会把溢出任务迁回，并接住新的远期任务", () =
     driver.advanceSlice((FUTURE_DAY_WINDOW + 20) * day, BUDGET);
     assert(calls.join(",") === "far,later", `执行 ${calls.join(",")}`);
     assert(clock.TotalGameTime === (FUTURE_DAY_WINDOW + 20) * day, `停在 ${clock.TotalGameTime}`);
+});
+
+check("结算时刻已经过去的任务不能插入", () => {
+    const { clock, driver, tasks } = boot(0);
+    driver.advanceSlice(50, BUDGET);
+    assert(clock.TotalGameTime === 50, `停在 ${clock.TotalGameTime}`);
+    let calls = 0;
+    tasks.addRecord(taskAt("stale", 40), () => {
+        calls += 1;
+    });
+    assert(tasks.record("stale")?.lifecycleState === TaskLifecycleState.Expired, "过期任务应失效");
+    assert(tasks.Schedule.locate(tasks.record("stale")!) === "missing", "过期任务不应占槽");
+    tasks.addRecord(taskAt("due-now", 50), () => {
+        calls += 1;
+    });
+    assert(tasks.Schedule.locate(tasks.record("due-now")!) === "today", "当前时刻仍可插入");
+    tasks.addRecord(taskAt("catch-up", 30, { startLatePolicy: TaskLatePolicy.RunLate }), () => {
+        calls += 1;
+    });
+    assert(tasks.record("catch-up")?.lifecycleState === TaskLifecycleState.Scheduled, "补跑任务不应提前失效");
+    assert(tasks.Schedule.locate(tasks.record("catch-up")!) === "today", "补跑任务应入表");
+    driver.advanceSlice(50, BUDGET);
+    assert(calls === 2, `执行了 ${calls}`);
 });
 
 check("非法时间不会进索引，同刻迟到任务仍按策略处理", () => {
@@ -1184,6 +1272,40 @@ check("同一时刻的第二次执行使用新的编号", () => {
     assert(ids[1] !== ids[0], "两次执行编号不能相同");
 });
 
+check("处理函数里取消自己后不会被完成覆盖", () => {
+    const { driver, tasks } = boot(0);
+    tasks.addRecord(taskAt("self", 10), (task) => {
+        tasks.cancel(task.id);
+    });
+    driver.advanceSlice(10, BUDGET);
+    assert(tasks.record("self")?.lifecycleState === TaskLifecycleState.Canceled, "取消应保留");
+    assert(tasks.Schedule.locate(tasks.record("self")!) === "missing", "取消后不应留在时间表");
+});
+
+check("任务失效后还开着的执行不能提交", () => {
+    const { driver, tasks } = boot(0);
+    tasks.addRecord(
+        taskAt("wait", 10, {
+            executionMode: TaskExecutionMode.Async,
+            resourceClaims: [{ resourceKey: "story:main", access: TaskResourceAccess.Exclusive }],
+        }),
+        () => undefined
+    );
+    driver.advanceSlice(10, BUDGET);
+    const execution = tasks.Pipeline.executions.list()[0];
+    const waiting = tasks.record("wait");
+    assert(waiting !== undefined && execution !== undefined, "任务和执行应存在");
+    waiting!.lifecycleState = TaskLifecycleState.Expired;
+    tasks.Pipeline.acceptExternalResult(stockResult(execution.executionId, "wait", 6));
+    driver.advanceSlice(10, BUDGET);
+    assert(tasks.Pipeline.entities.value("stock") === undefined, "失效后不能写库存");
+    assert(execution.status === TaskExecutionStatus.Expired, `执行状态 ${execution.status}`);
+    assert(
+        tasks.Pipeline.resources.canAcquire([{ resourceKey: "story:main", access: TaskResourceAccess.Exclusive }]),
+        "失效后应释放资源"
+    );
+});
+
 check("处理函数抛错后任务结束，并且不能在推进中再次推进", () => {
     const { clock, driver, tasks } = boot(0);
     tasks.addRecord(taskAt("boom", 10), () => {
@@ -1196,6 +1318,86 @@ check("处理函数抛错后任务结束，并且不能在推进中再次推进"
     assert(tasks.record("boom")?.lifecycleState === TaskLifecycleState.Expired, "抛错的任务应结束");
 });
 
+check("异步结果不能换掉执行自己的幂等键", () => {
+    const { driver, tasks } = boot(0);
+    tasks.addRecord(
+        taskAt("pay", 10, {
+            executionMode: TaskExecutionMode.Async,
+            causalityPolicy: TaskCausalityPolicy.Independent,
+        }),
+        () => undefined
+    );
+    driver.advanceSlice(10, BUDGET);
+    const execution = tasks.Pipeline.executions.list()[0];
+    tasks.Pipeline.acceptExternalResult({
+        executionId: execution.executionId,
+        taskId: "pay",
+        taskRevision: 1,
+        success: true,
+        payload: {
+            executionId: "other",
+            readSet: { gold: 0 },
+            commands: [{ entityKey: "gold", value: 10 }],
+            idempotencyKey: "forged",
+        },
+        idempotencyKey: "forged",
+    });
+    driver.advanceSlice(10, BUDGET);
+    assert(tasks.Pipeline.entities.value("gold") === 10, `金币 ${tasks.Pipeline.entities.value("gold")}`);
+    assert(tasks.Pipeline.idempotency.has(execution.idempotencyKey), "应按执行自己的幂等键记账");
+    assert(!tasks.Pipeline.idempotency.has("forged"), "载荷里的幂等键不能生效");
+    assert(execution.status === TaskExecutionStatus.Completed, `状态 ${execution.status}`);
+});
+
+check("成功但载荷形状不对时执行失败", () => {
+    const { driver, tasks } = boot(0);
+    tasks.addRecord(
+        taskAt("pay", 10, {
+            executionMode: TaskExecutionMode.Async,
+            causalityPolicy: TaskCausalityPolicy.Independent,
+        }),
+        () => undefined
+    );
+    driver.advanceSlice(10, BUDGET);
+    const execution = tasks.Pipeline.executions.list()[0];
+    tasks.Pipeline.acceptExternalResult({
+        executionId: execution.executionId,
+        taskId: "pay",
+        taskRevision: 1,
+        success: true,
+        payload: { gold: 10 },
+        idempotencyKey: execution.idempotencyKey,
+    });
+    driver.advanceSlice(10, BUDGET);
+    assert(tasks.Pipeline.entities.value("gold") === undefined, "畸形载荷不能写金币");
+    assert(execution.status === TaskExecutionStatus.Failed, `状态 ${execution.status}`);
+    assert(tasks.record("pay")?.lifecycleState === TaskLifecycleState.Expired, "任务应失效");
+    assert(!tasks.Pipeline.idempotency.has(execution.idempotencyKey), "失败不应记下幂等键");
+});
+
+check("没有载荷的成功仍然完成", () => {
+    const { driver, tasks } = boot(0);
+    tasks.addRecord(
+        taskAt("ack", 10, {
+            executionMode: TaskExecutionMode.Async,
+            causalityPolicy: TaskCausalityPolicy.Independent,
+        }),
+        () => undefined
+    );
+    driver.advanceSlice(10, BUDGET);
+    const execution = tasks.Pipeline.executions.list()[0];
+    tasks.Pipeline.acceptExternalResult({
+        executionId: execution.executionId,
+        taskId: "ack",
+        taskRevision: 1,
+        success: true,
+        idempotencyKey: execution.idempotencyKey,
+    });
+    driver.advanceSlice(10, BUDGET);
+    assert(execution.status === TaskExecutionStatus.Completed, `状态 ${execution.status}`);
+    assert(tasks.record("ack")?.lifecycleState === TaskLifecycleState.Completed, "无载荷成功应完成");
+});
+
 check("没有读集的写入会被拒绝", () => {
     const { driver, tasks } = boot(0);
     tasks.addRecord(taskAt("bare", 10), () => ({
@@ -1206,7 +1408,7 @@ check("没有读集的写入会被拒绝", () => {
     }));
     driver.advanceSlice(10, BUDGET);
     assert(tasks.Pipeline.entities.value("stock") === undefined, "缺少读集不能写库存");
-    assert(tasks.record("bare")?.lifecycleState !== TaskLifecycleState.Completed, "缺少读集不应完成");
+    assert(tasks.record("bare")?.lifecycleState === TaskLifecycleState.Expired, "缺少读集应失效");
 });
 
 check("分帧推进只在让出时等待下一帧", async () => {

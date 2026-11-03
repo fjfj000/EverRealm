@@ -17,6 +17,7 @@ import {
     TaskOverlapPolicy,
     TaskResourceAccess,
     TaskTimePolicy,
+    isTerminalLifecycle,
 } from "../task-define";
 import { CommitGate } from "./commit-gate";
 import { DependencyGraph } from "./dependency-graph";
@@ -32,8 +33,9 @@ import { TaskExecutor } from "./task-executor";
 import { TaskFinalizer } from "./task-finalizer";
 import { TaskRepository } from "./task-repository";
 import { TaskRuntime } from "./task-runtime";
-import { TriggerGate } from "./trigger-gate";
+import { TriggerGate, type GateResult } from "./trigger-gate";
 import { ExternalWork } from "./external-work";
+import { transitionExecution } from "./execution-status";
 
 export type BoundaryOutcome = "continue" | "paused" | "awaiting" | "faulted";
 
@@ -54,25 +56,43 @@ export interface PipelineSnapshot {
  * handler 返回后立即提交，这里不 await 业务 Promise。
  */
 export class TaskPipeline {
+    /** 任务主记录。时间表只是索引，以这里的记录为准。 */
     public readonly tasks: TaskRepository = new TaskRepository();
+    /** 每次触发生成的执行记录。一条任务可以同时有多条。 */
     public readonly executions: ExecutionRepository = new ExecutionRepository();
+    /** 这一刻已经通过触发门、正在排队启动的任务。队头受阻时继续找后面能跑的。 */
     public readonly ready: ReadyScheduler = new ReadyScheduler();
+    /** 资源占用。读可以并存，写和独占会挡住其他访问。 */
     public readonly resources: ResourceArbiter = new ResourceArbiter();
+    /** 执行之间的依赖。dependsOn 里的执行没完成，这条就不能开始。 */
     public readonly dependencies: DependencyGraph = new DependencyGraph();
+    /** 从时间表取出时过滤已结束的任务，并发现活动版本已经变化。 */
     public readonly triggerGate: TriggerGate = new TriggerGate();
+    /** 真正开始前检查 startBefore 和迟到策略。 */
     public readonly startGate: StartGate = new StartGate();
+    /** 同步调用收成 TaskChangeSet；异步调用只发起，返回值不提交。两种结果都按执行自己的编号规范化。 */
     public readonly executor: TaskExecutor = new TaskExecutor();
+    /** 一次执行结束后释放资源、通知依赖，并更新任务生命周期。 */
     public readonly finalizer: TaskFinalizer = new TaskFinalizer();
+    /** 尚未提交的外部结果，按 commandSequence 排序。 */
     public readonly resultInbox: DurableResultInbox = new DurableResultInbox();
+    /** 处理函数和任务序号。函数不进存档，读档后按 type 再绑上。 */
     public readonly runtime: TaskRuntime = new TaskRuntime();
+    /** 外部请求的单号。complete、fail、abort 只把结果放进收件箱。 */
     public readonly external: ExternalWork = new ExternalWork(this);
+    /** 实体的当前数值和版本。只有提交成功才会改版本。 */
     public readonly entities: EntityStore = new EntityStore();
+    /** 已经提交过的幂等键，用来挡住同一次执行的重复写入。 */
     public readonly idempotency: IdempotencyLedger = new IdempotencyLedger();
+    /** 提交前检查幂等键、commitBefore、读集和版本是否仍匹配。 */
     public readonly commitGate: CommitGate;
+    /** 串行写入实体并记账。这段中间不能等待外部结果。 */
     public readonly commits: SerialCommitQueue;
     public faultReason: string = "";
     public pauseTaskId: string = "";
+    /** 已经到期并离开时间表，但资源或依赖还没就绪，留在管线里等下一轮再试。 */
     private _parked: TaskRecord[] = [];
+    /** 这一轮不执行，边界结束后要放回时间表。包括还没到点、末段推迟、排了下一次，以及暂停或失败时还没跑的任务。 */
     private _deferred: TaskRecord[] = [];
     private readonly _recovered: Set<string> = new Set();
     /** StopWorldUntilResult 或 PauseWorld 的异步执行。结果提交前世界不能越过当前秒。 */
@@ -88,6 +108,9 @@ export class TaskPipeline {
         const staying: TaskRecord[] = [];
         const ready: TaskRecord[] = [];
         for (const task of this._parked) {
+            if (isTerminalLifecycle(task.lifecycleState)) {
+                continue;
+            }
             const gate = this.startGate.check(task, now);
             if (gate.decision === "expire") {
                 // 正在等待外部结果的任务不能因为下一次排队过期而被一起取消。
@@ -122,7 +145,7 @@ export class TaskPipeline {
                 continue;
             }
             if (gate.reason === "活动 revision 已变化") {
-                task.lifecycleState = TaskLifecycleState.Expired;
+                this._expireTask(task);
             }
         }
         this.ready.enqueue(accepted);
@@ -142,7 +165,7 @@ export class TaskPipeline {
             const task = this.ready.removeAt(index);
             const partial = resolvePartial(task);
             if (partial.kind === "drop") {
-                task.lifecycleState = TaskLifecycleState.Expired;
+                this._expireTask(task);
                 continue;
             }
             if (partial.kind === "defer") {
@@ -221,9 +244,13 @@ export class TaskPipeline {
         });
     }
 
-    /** 当前边界已经处理完，可以按序号提交回流结果。 */
-    public drainResults(now: GameTime): void {
+    /**
+     * 当前边界已经处理完，可以按序号提交回流结果。
+     * 返回需要放回时间表的任务。调用方负责插回去。
+     */
+    public drainResults(now: GameTime): TaskRecord[] {
         const deferred: TaskResultCommand[] = [];
+        const reschedule: TaskRecord[] = [];
         for (const command of this.resultInbox.drain()) {
             const execution = this.executions.get(command.executionId);
             if (!execution) {
@@ -243,50 +270,54 @@ export class TaskPipeline {
                 command.taskRevision !== execution.taskRevision
             ) {
                 this._closeExternal(task, execution, "failed");
+                if (task) {
+                    this._concludeRejected(task, now, reschedule);
+                }
                 continue;
             }
-            if (task.lifecycleState === TaskLifecycleState.Canceled) {
-                execution.status = TaskExecutionStatus.Canceled;
-                this.resources.release(execution.executionId);
-                this._clearBarrier(execution.executionId);
+            if (isTerminalLifecycle(task.lifecycleState)) {
+                this._rejectClosedTask(task, execution);
                 continue;
             }
             if (!command.success) {
                 this._closeExternal(task, execution, "failed");
+                this._concludeRejected(task, now, reschedule);
                 continue;
             }
             const changeSet = this.executor.prepareResult(execution, command.payload);
-            changeSet.idempotencyKey = command.idempotencyKey || execution.idempotencyKey;
-            execution.readSet = changeSet.readSet;
+            if (!changeSet) {
+                execution.preparedResult = command.payload;
+                this._closeExternal(task, execution, "failed");
+                this._concludeRejected(task, now, reschedule);
+                continue;
+            }
             execution.preparedResult = command.payload;
-            const gate = this.commitGate.check(task, execution, changeSet, now);
+            const gate = this._stageCommit(task, execution, changeSet, now);
             if (gate.decision === "execute") {
-                this._applyChange(execution, changeSet, gate.reason);
                 this._closeExternal(task, execution, "completed");
                 continue;
             }
             if (gate.decision === "expire") {
                 this._closeExternal(task, execution, "expired");
+                this._sealOpenExecutions(task.id, execution.executionId);
                 continue;
             }
             this._closeExternal(task, execution, "failed");
+            this._concludeRejected(task, now, reschedule);
         }
         for (const command of deferred) {
             this.resultInbox.enqueue(command);
         }
+        return reschedule;
     }
 
     /** 游戏时间已经越过等待期限。按恢复策略重发、查询、取消或补偿，并释放资源。 */
     public sweepTimeouts(now: GameTime): void {
         for (const execution of this.executions.list()) {
-            if (
-                !this._isOpen(execution) ||
-                execution.timeoutAt === undefined ||
-                now <= execution.timeoutAt
-            ) {
-                continue;
+            /** 如果执行还在，并且超时，则按恢复策略处理 */
+            if (this._isOpen(execution) && now > execution.timeoutAt) {
+                this._recover(this.tasks.get(execution.taskId), execution, now);
             }
-            this._recover(this.tasks.get(execution.taskId), execution, now);
         }
     }
 
@@ -306,18 +337,18 @@ export class TaskPipeline {
                 task.asyncRecoveryPolicy === TaskAsyncRecoveryPolicy.Retry ||
                 task.asyncRecoveryPolicy === TaskAsyncRecoveryPolicy.Reissue
             ) {
-                this._reissue(task, execution, now);
+                this._recover(task, execution, now);
             }
         }
     }
 
     public cancelTask(taskId: string): void {
         const task = this.tasks.get(taskId);
-        if (task) {
+        if (task && !isTerminalLifecycle(task.lifecycleState)) {
             task.lifecycleState = TaskLifecycleState.Canceled;
         }
         for (const execution of this._openExecutions(taskId)) {
-            execution.status = TaskExecutionStatus.Canceled;
+            transitionExecution(execution, TaskExecutionStatus.Canceled);
             this.resources.release(execution.executionId);
             this._clearBarrier(execution.executionId);
         }
@@ -412,7 +443,13 @@ export class TaskPipeline {
         const kept: TaskRecord[] = [];
         for (const task of this.ready.drain()) {
             if (this.startGate.check(task, settleAt).decision === "expire") {
-                task.lifecycleState = TaskLifecycleState.Expired;
+                // 还有未结束的执行时，只丢掉这次迟到的开始，不把整条任务写成失效。
+                if (
+                    this._openExecutions(task.id).length === 0 &&
+                    !isTerminalLifecycle(task.lifecycleState)
+                ) {
+                    task.lifecycleState = TaskLifecycleState.Expired;
+                }
                 continue;
             }
             kept.push(task);
@@ -480,7 +517,8 @@ export class TaskPipeline {
         execution: ExecutionRecord,
         settleAt: GameTime
     ): BoundaryOutcome {
-        execution.status = TaskExecutionStatus.Waiting;
+        transitionExecution(execution, TaskExecutionStatus.Running);
+        transitionExecution(execution, TaskExecutionStatus.Waiting);
         task.lifecycleState = TaskLifecycleState.Active;
         if (task.timeoutGameSeconds !== undefined) {
             execution.timeoutAt = settleAt + task.timeoutGameSeconds;
@@ -488,7 +526,7 @@ export class TaskPipeline {
         this.executor.startAsync({ execution, task });
         if (task.causalityPolicy !== TaskCausalityPolicy.UseRecordedResult) {
             try {
-                this.runtime.handler(task.id)?.(task, settleAt);
+                this.executor.invokeAsync({ execution, task }, this.runtime.handler(task.id), settleAt);
             } catch (error) {
                 this.faultReason = error instanceof Error ? error.message : String(error);
                 this._deadLetter(task, execution);
@@ -538,11 +576,17 @@ export class TaskPipeline {
         settleAt: GameTime
     ): BoundaryOutcome {
         try {
+            transitionExecution(execution, TaskExecutionStatus.Running);
             let changeSet = this.executor.executeSync(
                 { execution, task },
                 this.runtime.handler(task.id),
                 settleAt
             );
+            // 处理函数里已经取消或关掉这次执行时，不再提交，也不改写终态。
+            if (isTerminalLifecycle(task.lifecycleState) || !this._isOpen(execution)) {
+                this.resources.release(execution.executionId);
+                return "continue";
+            }
             let gate = this.commitGate.check(task, execution, changeSet, settleAt);
             // 旧读集冲突时只重算一次。第二次仍然冲突就拒绝，避免两个旧变更互相覆盖。
             if (
@@ -554,10 +598,15 @@ export class TaskPipeline {
                     this.runtime.handler(task.id),
                     settleAt
                 );
-                gate = this.commitGate.check(task, execution, changeSet, settleAt);
+                if (isTerminalLifecycle(task.lifecycleState) || !this._isOpen(execution)) {
+                    this.resources.release(execution.executionId);
+                    return "continue";
+                }
+                gate = this._stageCommit(task, execution, changeSet, settleAt);
+            } else {
+                gate = this._stageCommit(task, execution, changeSet, settleAt, gate);
             }
             if (gate.decision === "execute") {
-                this._applyChange(execution, changeSet, gate.reason);
                 return this._finishSync(task, execution, settleAt);
             }
             if (gate.decision === "expire") {
@@ -568,10 +617,12 @@ export class TaskPipeline {
                     this.resources,
                     this.dependencies
                 );
+                this._sealOpenExecutions(task.id, execution.executionId);
                 return "continue";
             }
             if (gate.decision === "skip" || gate.decision === "reschedule") {
                 this.finalizer.finish(task, execution, "failed", this.resources, this.dependencies);
+                this._concludeRejected(task, settleAt, this._deferred);
                 return "continue";
             }
             const neverDecision: never = gate.decision;
@@ -585,14 +636,29 @@ export class TaskPipeline {
         }
     }
 
-    private _applyChange(
+    /**
+     * 同步和异步共用的提交前步骤。
+     * 结果先标成已准备。还没有检查结果时，再核对幂等、时限、读集和版本。通过且不是重复提交时才写入。
+     */
+    private _stageCommit(
+        task: TaskRecord,
         execution: ExecutionRecord,
         changeSet: TaskChangeSet,
-        reason: string
-    ): void {
-        if (reason === "幂等命中") {
-            return;
+        now: GameTime,
+        checked?: GateResult
+    ): GateResult {
+        transitionExecution(execution, TaskExecutionStatus.Prepared);
+        execution.readSet = changeSet.readSet;
+        // 同一份结果已经检查过就沿用。重算后的新结果必须再查一次。
+        const gate = checked ?? this.commitGate.check(task, execution, changeSet, now);
+        if (gate.decision === "execute" && gate.reason !== "幂等命中") {
+            transitionExecution(execution, TaskExecutionStatus.Committing);
+            this._applyChange(execution, changeSet);
         }
+        return gate;
+    }
+
+    private _applyChange(execution: ExecutionRecord, changeSet: TaskChangeSet): void {
         this.commits.apply(this._scaleChange(changeSet, execution.partialRatio));
     }
 
@@ -644,7 +710,7 @@ export class TaskPipeline {
             this.dependencies,
             reschedule
         );
-        if (reschedule) {
+        if (reschedule && !isTerminalLifecycle(task.lifecycleState)) {
             this._deferred.push(task);
         }
         if (task.timePolicy === TaskTimePolicy.PauseWorld) {
@@ -673,6 +739,8 @@ export class TaskPipeline {
         const policy = task?.asyncRecoveryPolicy ?? execution.recoveryPolicy;
         switch (policy) {
             case TaskAsyncRecoveryPolicy.Retry:
+                this._retry(task, execution, now);
+                return;
             case TaskAsyncRecoveryPolicy.Reissue:
                 this._reissue(task, execution, now);
                 return;
@@ -683,15 +751,21 @@ export class TaskPipeline {
                 this._clearBarrier(execution.executionId);
                 return;
             case TaskAsyncRecoveryPolicy.Cancel:
-                if (task) {
+                if (task && !isTerminalLifecycle(task.lifecycleState)) {
                     task.lifecycleState = TaskLifecycleState.Canceled;
                 }
-                execution.status = TaskExecutionStatus.Canceled;
+                transitionExecution(execution, TaskExecutionStatus.Canceled);
                 this.resources.release(execution.executionId);
                 this._clearBarrier(execution.executionId);
+                if (task) {
+                    this._sealOpenExecutions(task.id, execution.executionId);
+                }
                 return;
             case TaskAsyncRecoveryPolicy.Compensate:
                 this._closeExternal(task, execution, "expired");
+                if (task) {
+                    this._sealOpenExecutions(task.id, execution.executionId);
+                }
                 return;
             default: {
                 const neverPolicy: never = policy;
@@ -700,15 +774,33 @@ export class TaskPipeline {
         }
     }
 
+    /** 再次询问同一张外部单。单号不变，只增加尝试次数。 */
+    private _retry(task: TaskRecord | undefined, execution: ExecutionRecord, now: GameTime): void {
+        this._callHandlerAgain(task, execution, now, false);
+    }
+
+    /** 作废旧单后再调用处理函数。下次 issue 会按新的尝试次数生成单号。 */
     private _reissue(
         task: TaskRecord | undefined,
         execution: ExecutionRecord,
         now: GameTime
     ): void {
+        this._callHandlerAgain(task, execution, now, true);
+    }
+
+    private _callHandlerAgain(
+        task: TaskRecord | undefined,
+        execution: ExecutionRecord,
+        now: GameTime,
+        renewOrder: boolean
+    ): void {
         const limit = task?.maxAttempts ?? 3;
         if (!task || execution.attempt >= limit) {
             this._deadLetter(task, execution);
             return;
+        }
+        if (renewOrder) {
+            this._voidExternalOrder(execution);
         }
         execution.attempt += 1;
         if (task.timeoutGameSeconds !== undefined) {
@@ -718,17 +810,80 @@ export class TaskPipeline {
             return;
         }
         try {
-            this.runtime.handler(task.id)?.(task, now);
+            this.executor.invokeAsync({ execution, task }, this.runtime.handler(task.id), now);
         } catch (error) {
             this.faultReason = error instanceof Error ? error.message : String(error);
             this._deadLetter(task, execution);
         }
     }
 
+    private _voidExternalOrder(execution: ExecutionRecord): void {
+        const correlationId = execution.externalCorrelationId;
+        if (correlationId !== undefined) {
+            this.external.discard(correlationId);
+        }
+        execution.externalCorrelationId = undefined;
+    }
+
     private _deadLetter(task: TaskRecord | undefined, execution: ExecutionRecord): void {
         this._closeExternal(task, execution, "failed");
-        if (task && task.lifecycleState !== TaskLifecycleState.Completed) {
+        if (task) {
+            this._expireTask(task);
+        }
+    }
+
+    /** 整条任务失效，并关掉其余还开着的执行，避免它们继续提交。 */
+    private _expireTask(task: TaskRecord): void {
+        /** 如果任务不是终止状态，则标记为失效 */
+        if (!isTerminalLifecycle(task.lifecycleState)) {
             task.lifecycleState = TaskLifecycleState.Expired;
+        }
+        this._sealOpenExecutions(task.id, undefined);
+    }
+
+    /**
+     * 这次提交被拒绝。
+     * 还有更晚的结算点就保持活动并排回去；否则写成失效，避免读档时再跑一次。
+     */
+    private _concludeRejected(
+        task: TaskRecord,
+        settleAt: GameTime,
+        reschedule: TaskRecord[]
+    ): void {
+        if (isTerminalLifecycle(task.lifecycleState)) {
+            return;
+        }
+        if (Number.isInteger(task.nextSettleAt) && task.nextSettleAt > settleAt) {
+            task.lifecycleState = TaskLifecycleState.Active;
+            reschedule.push(task);
+            return;
+        }
+        if (this._openExecutions(task.id).length > 0) {
+            return;
+        }
+        task.lifecycleState = TaskLifecycleState.Expired;
+    }
+
+    /** 任务已经结束时，这条执行不再提交。 */
+    private _rejectClosedTask(task: TaskRecord, execution: ExecutionRecord): void {
+        transitionExecution(
+            execution,
+            task.lifecycleState === TaskLifecycleState.Canceled
+                ? TaskExecutionStatus.Canceled
+                : TaskExecutionStatus.Expired
+        );
+        this.resources.release(execution.executionId);
+        this._clearBarrier(execution.executionId);
+    }
+
+    private _sealOpenExecutions(taskId: string, keepExecutionId: string | undefined): void {
+        for (const execution of this._openExecutions(taskId)) {
+            if (execution.executionId === keepExecutionId) {
+                continue;
+            }
+            transitionExecution(execution, TaskExecutionStatus.Expired);
+            this.resources.release(execution.executionId);
+            this._clearBarrier(execution.executionId);
         }
     }
 
@@ -738,10 +893,10 @@ export class TaskPipeline {
         outcome: "completed" | "expired" | "failed"
     ): void {
         if (!task) {
-            execution.status =
-                outcome === "completed"
-                    ? TaskExecutionStatus.Completed
-                    : TaskExecutionStatus.Failed;
+            transitionExecution(
+                execution,
+                outcome === "completed" ? TaskExecutionStatus.Completed : TaskExecutionStatus.Failed
+            );
             this.resources.release(execution.executionId);
             this._clearBarrier(execution.executionId);
             return;
@@ -811,7 +966,7 @@ export class TaskPipeline {
             triggerAt: settleAt,
             settleIntervalFrom: task.nextSettleAt,
             settleIntervalTo: settleAt,
-            status: TaskExecutionStatus.Running,
+            status: TaskExecutionStatus.Ready,
             priority: task.priority,
             sequence: task.sequence,
             attempt: 1,

@@ -23,35 +23,63 @@ export interface TaskResourceClaim {
 
 /** 任务主记录，时间索引由它重建。一次任务可以对应多次 ExecutionRecord。 */
 export interface TaskRecord {
+    /** 任务编号。执行编号由它、结算时刻和 revision 拼出。 */
     id: string;
+    /** 任务种类。读档后按这个字段重新绑定处理函数，函数本身不进存档。 */
     type: string;
+    /** 周期起点。用来推算周期长度，不是时间表的分槽键。 */
     startTime: GameTime;
+    /** 下一次结算时刻，时间表按它分槽。新登记时若已经早于当前时间，由开始迟到策略决定失效或补跑。完成后若要再跑，必须改成更晚的时刻再插回索引。 */
     nextSettleAt: GameTime;
+    /** 最早可以开始准备的时刻。当前索引用 nextSettleAt；末段推迟时会把它改成同一时刻。 */
     dueAt: GameTime;
+    /** 最晚可以真正开始的时刻。不填时，晚于 nextSettleAt 即算错过。 */
     startBefore?: GameTime;
+    /** 最晚可以提交结果的时刻。晚于它则按 commitLatePolicy 处理。 */
     commitBefore?: GameTime;
+    /** 任务效果结束的时刻。早于 nextSettleAt 时，末段按 partialSettlementPolicy 结算。 */
     activeUntil?: GameTime;
+    /** 周期档位，只用来算下一次间隔，不决定执行队列。 */
     settleLevel: TaskSettleLevel;
+    /** MultiDay 的间隔天数。其他档位不使用。 */
     cadenceParam?: number;
+    /** 同一时刻的阶段顺序。数字小的先执行，不表示互斥。 */
     sequenceType: TaskSequenceType;
+    /** 同一阶段内的优先级。数字小的先执行。 */
     priority: number;
+    /** 同一优先级内的稳定序号。数字小的先执行。 */
     sequence: number;
+    /** 处理函数当场返回，还是外部结果稍后回流。 */
     executionMode: TaskExecutionMode;
+    /** ContinueWorld 不挡时钟。PauseWorld 停在这一秒，直到 resumeAfterDecision。 */
     timePolicy: TaskTimePolicy;
+    /** 外部结果没回来时，后续世界能否继续。StopWorldUntilResult 会立起因果屏障。 */
     causalityPolicy: TaskCausalityPolicy;
+    /** 显式资源占用。读可以并存，写和独占会挡住其他访问。 */
     resourceClaims: TaskResourceClaim[];
+    /** 必须先完成的执行编号。不填时间先后，只认这些编号。 */
     dependsOn: string[];
+    /** 额外的独占名额。实现里当成一把独占资源，键名是 serial: 加这个值。 */
     serialKey?: string;
+    /** 错过 startBefore 之后：跳过、照常补跑、补跑或补偿。 */
     startLatePolicy: TaskLatePolicy;
+    /** 错过 commitBefore 之后的处理，取值和 startLatePolicy 相同。 */
     commitLatePolicy: TaskLatePolicy;
+    /** activeUntil 之前凑不满一个周期时：按比例、丢弃，或改到 activeUntil 再结算一次。 */
     partialSettlementPolicy: TaskPartialSettlementPolicy;
+    /** 上一次执行还没结束、下一次边界又到了：合并、排队、跳过或并行。 */
     overlapPolicy: TaskOverlapPolicy;
+    /** 外部请求超时或读档后：重试、再发、继续等、取消或补偿。 */
     asyncRecoveryPolicy: TaskAsyncRecoveryPolicy;
+    /** 业务自己的数据。引擎不解释，存档时按 JSON 保存。 */
     payload: unknown;
+    /** 整条任务的状态。一次执行的状态在 ExecutionRecord 上。 */
     lifecycleState: TaskLifecycleState;
+    /** 任务内容版本。外部结果带回的 revision 必须和它一致，否则拒绝提交。 */
     revision: number;
     /** 关联活动。结算时必须和活动当前 revision 一致。 */
     activityId?: string;
+    /** 登记任务时看到的活动版本。活动被改道或取消后会加一，旧任务随之过期。 */
     activityRevision?: number;
     /** 从触发时刻起，超过这么多游戏秒仍未回流就按恢复策略处理。 */
     timeoutGameSeconds?: number;
@@ -72,6 +100,7 @@ export interface ExecutionRecord {
     status: TaskExecutionStatus;
     priority: number;
     sequence: number;
+    /** 处理函数已调用的次数，含首次。Reissue 用它区分新单，Retry 不换单号。 */
     attempt: number;
     acquiredResources: string[];
     readSet: Record<string, number>;

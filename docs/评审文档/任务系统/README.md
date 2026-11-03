@@ -4,9 +4,10 @@
 
 ## 阅读顺序
 
-1. [游戏任务系统最终方案](游戏任务系统最终方案.md)：修订设计基线，重点是统一绝对时间边界与安全 TaskPipeline。
-2. [任务队列数据结构评审](任务队列数据结构评审.md)：两级索引复杂度、ReadyScheduler、ResourceArbiter、ExecutionRecord 和 ResultInbox。
-3. [候选方案：按日分桶与全局跳表](候选方案-按日分桶与全局跳表.md)：历史选型；按日分桶方向已演进为两级直址表。
+1. [任务系统技术架构](任务系统技术架构.md)：计算与提交分离、乐观并发、幂等和提交边界，以及类职责、框架图和流程图。
+2. [游戏任务系统最终方案](游戏任务系统最终方案.md)：设计基线，重点是统一绝对时间边界与安全 TaskPipeline。
+3. [任务队列数据结构评审](任务队列数据结构评审.md)：两级索引复杂度、ReadyScheduler、ResourceArbiter、ExecutionRecord 和 ResultInbox。
+4. [候选方案：按日分桶与全局跳表](候选方案-按日分桶与全局跳表.md)：历史选型；按日分桶方向已演进为两级直址表。
 
 与世界架构的关系：在线 Tick、`advance`、PauseWorld 与存档以 `docs/世界架构/开发与验收.md` 为准；本目录定义 WorldDriver 如何按 `nextSettleAt` 推进，以及 TaskSequenceType、资源互斥和业务依赖的职责边界。
 

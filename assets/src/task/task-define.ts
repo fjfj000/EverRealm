@@ -84,9 +84,13 @@ export enum TaskTimePolicy {
 
 /** 外部结果与后续世界之间的因果关系。 */
 export enum TaskCausalityPolicy {
+    /** 结果不影响等待期间已经推进的世界。时钟不因这次等待停下。 */
     Independent = 0,
+    /** 结果提交前，时钟停在发起这一秒。 */
     StopWorldUntilResult = 1,
+    /** 时钟继续走。结果晚到后仍按 commitBefore 和迟到策略决定能否提交。 */
     AllowLateResult = 2,
+    /** 不调用处理函数，也不访问外部服务。消费已经录好的结果。 */
     UseRecordedResult = 3,
 }
 
@@ -115,9 +119,9 @@ export enum TaskPartialSettlementPolicy {
 
 /** 外部请求超时或读档后怎么处理。不保存 Promise。 */
 export enum TaskAsyncRecoveryPolicy {
-    /** 再次调用处理函数。次数达到 maxAttempts 后改为失败并释放资源。 */
+    /** 再次询问同一张外部单。次数达到 maxAttempts 后改为失败并释放资源。 */
     Retry = 0,
-    /** 再发一次新的外部请求。次数限制和 Retry 相同。 */
+    /** 作废旧单，再发一张新的外部单。次数限制和 Retry 相同。 */
     Reissue = 1,
     /** 不重新发起。超时后释放资源，执行继续等待，迟到结果仍可提交。 */
     QueryRemote = 2,
@@ -146,6 +150,24 @@ export enum TaskLifecycleState {
     Canceled = 3,
     /** 错过时限、活动 revision 失效、末段被丢弃，或处理函数抛错。之后的触发都会跳过。 */
     Expired = 4,
+}
+
+/** 完成、取消、失效之后标记为【终止状态】，该状态不可逆 */
+export function isTerminalLifecycle(state: TaskLifecycleState): boolean {
+    switch (state) {
+        case TaskLifecycleState.Completed:
+        case TaskLifecycleState.Canceled:
+        case TaskLifecycleState.Expired:
+            return true;
+        case TaskLifecycleState.Scheduled:
+        case TaskLifecycleState.Active:
+            return false;
+        default: {
+            const neverState: never = state;
+            void neverState;
+            return true;
+        }
+    }
 }
 
 /** 一次执行的状态。一条任务可以同时有多条执行。 */

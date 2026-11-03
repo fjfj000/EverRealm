@@ -4,8 +4,8 @@ import { absoluteGameDay, FUTURE_DAY_WINDOW } from "./game-time";
 import { compareTaskRecord } from "./task-order";
 
 /**
- * 非今日任务按游戏日分槽。
- * 槽位是「绝对日 - epoch」，窗口跟着今天往前滚。窗口外交给 OverflowIndex。
+ * 今天起五年内的任务按游戏日分槽。
+ * epoch 就是今天的绝对日，槽位是「绝对日 - 今天」。再往后交给 OverflowIndex。
  */
 export class FutureDayTable {
     private readonly _table = new DirectAddressTable<TaskRecord>(0, FUTURE_DAY_WINDOW - 1, compareTaskRecord);
@@ -47,7 +47,7 @@ export class FutureDayTable {
     }
 
     /**
-     * 把窗口起点拨到今天。
+     * 把窗口左端拨到今天，覆盖 [今天, 今天 + 五年)。
      * 还落在新窗口里的任务留在表内，滑出窗口的交还给调用方。
      */
     public retarget(epoch: number): TaskRecord[] {

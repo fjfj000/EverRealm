@@ -14,6 +14,7 @@ import {
     TaskExecutionStatus,
     TaskLatePolicy,
     TaskLifecycleState,
+    isTerminalLifecycle,
     TaskOverlapPolicy,
     TaskPartialSettlementPolicy,
     TaskSettleLevel,
@@ -38,8 +39,8 @@ export class TaskManager {
     public init(): void {}
 
     /**
-     * 登记任务。已经错过 nextSettleAt 的记录仍放进索引，
-     * 由开始门按迟到策略决定补跑或过期，不在这里直接丢掉。
+     * 登记任务。终态不进时间表。
+     * nextSettleAt 已经早于当前时间时，由开始迟到策略决定失效或补跑，时间表本身不改生命周期。
      */
     public addTask(task: TaskBase): void {
         if (task.Sequence === 0) {
@@ -162,7 +163,20 @@ export class TaskManager {
     private _remember(record: TaskRecord): void {
         this._records.set(record.id, record);
         this._pipeline.tasks.add(record);
-        this._schedule.schedule(record, this._now());
+        const now = this._now();
+        if (isTerminalLifecycle(record.lifecycleState)) {
+            return;
+        }
+        if (this._schedule.schedule(record, now)) {
+            return;
+        }
+        // 结算时刻已过。跳过和补偿写成失效；补跑仍放回索引，取出后再执行。
+        const gate = this._pipeline.startGate.check(record, now);
+        if (gate.decision === "expire") {
+            record.lifecycleState = TaskLifecycleState.Expired;
+            return;
+        }
+        this._schedule.restore(record, now);
     }
 
     private _fromTask(task: TaskBase): TaskRecord {

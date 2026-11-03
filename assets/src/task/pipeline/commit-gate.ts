@@ -1,5 +1,5 @@
-import { ExecutionRecord, TaskChangeSet, TaskRecord, TaskResultCommand } from "../task-contract";
-import { TaskLatePolicy } from "../task-define";
+import { ExecutionRecord, TaskChangeSet, TaskRecord } from "../task-contract";
+import { TaskLatePolicy, isTerminalLifecycle } from "../task-define";
 import { EntityStore } from "./entity-store";
 import { IdempotencyLedger } from "./idempotency-ledger";
 import { GateResult } from "./trigger-gate";
@@ -19,6 +19,9 @@ export class CommitGate {
         if (this._ledger.has(changeSet.idempotencyKey)) {
             return { decision: "execute", reason: "幂等命中" };
         }
+        if (isTerminalLifecycle(task.lifecycleState)) {
+            return { decision: "expire", reason: "任务已结束" };
+        }
         if (task.commitBefore !== undefined && now > task.commitBefore) {
             return this._lateResult(task.commitLatePolicy, "已经超过最晚提交时间");
         }
@@ -30,25 +33,6 @@ export class CommitGate {
             return { decision: "skip", reason: "版本冲突" };
         }
         return { decision: "execute", reason: "可以提交" };
-    }
-
-    public checkChangeSet(execution: ExecutionRecord, changeSet: TaskChangeSet): GateResult {
-        void execution;
-        if (this._ledger.has(changeSet.idempotencyKey)) {
-            return { decision: "execute", reason: "幂等命中" };
-        }
-        if (!this._entities.canCommit(changeSet.readSet)) {
-            return { decision: "skip", reason: "版本冲突" };
-        }
-        return { decision: "execute", reason: "可以提交" };
-    }
-
-    public checkResult(execution: ExecutionRecord, command: TaskResultCommand): GateResult {
-        void execution;
-        if (this._ledger.has(command.idempotencyKey)) {
-            return { decision: "execute", reason: "幂等命中" };
-        }
-        return { decision: "execute", reason: "结果可以提交" };
     }
 
     private _writeWithoutRead(changeSet: TaskChangeSet): boolean {

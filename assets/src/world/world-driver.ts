@@ -220,7 +220,7 @@ export class WorldDriver {
             }
             manager.Pipeline.sweepTimeouts(now);
             // 安全点：先消化已经入队的外部结果，再决定能不能离开这一秒。
-            manager.Pipeline.drainResults(now);
+            this._restore(manager, manager.Pipeline.drainResults(now), now);
             if (manager.Pipeline.isBlocked) {
                 return this._result(
                     "awaitingExternalInput",
@@ -258,7 +258,7 @@ export class WorldDriver {
                 sameTimeExecutions += due.length;
                 executions += due.length;
                 this._restore(manager, manager.Pipeline.takeDeferred(), now);
-                manager.Pipeline.drainResults(now);
+                this._restore(manager, manager.Pipeline.drainResults(now), now);
                 if (outcome === "faulted") {
                     return this._result(
                         "faulted",
@@ -354,7 +354,7 @@ export class WorldDriver {
 
     private _restore(manager: TaskManager, tasks: readonly TaskRecord[], now: GameTime): void {
         for (const task of tasks) {
-            manager.Schedule.schedule(task, now);
+            manager.Schedule.restore(task, now);
         }
     }
 
