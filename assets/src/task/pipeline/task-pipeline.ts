@@ -526,7 +526,11 @@ export class TaskPipeline {
         this.executor.startAsync({ execution, task });
         if (task.causalityPolicy !== TaskCausalityPolicy.UseRecordedResult) {
             try {
-                this.executor.invokeAsync({ execution, task }, this.runtime.handler(task.id), settleAt);
+                this.executor.invokeAsync(
+                    { execution, task },
+                    this.runtime.handler(task.id),
+                    settleAt
+                );
             } catch (error) {
                 this.faultReason = error instanceof Error ? error.message : String(error);
                 this._deadLetter(task, execution);
@@ -887,6 +891,11 @@ export class TaskPipeline {
         }
     }
 
+    /**
+     * 收口一次正在等待外部结果的执行。
+     * External 指执行还停在外部回流上，不是只服务 ExternalWork。
+     * 同步任务在处理函数返回后走 _finishSync，不进这里。
+     */
     private _closeExternal(
         task: TaskRecord | undefined,
         execution: ExecutionRecord,
@@ -935,6 +944,7 @@ export class TaskPipeline {
         );
     }
 
+    /** 获取任务的所有未结束的executions */
     private _openExecutions(taskId: string): ExecutionRecord[] {
         return this.executions
             .list()
