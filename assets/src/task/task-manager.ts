@@ -1,7 +1,7 @@
 import { Instance, setInstance } from "../framwork/utils/instance";
 import { ActivityManager } from "../world/activity-manager";
 import { WorldClock } from "../world/world-clock";
-import { TaskHandler } from "./pipeline/task-runtime";
+import { TaskCompensationHandler, TaskHandler } from "./pipeline/task-runtime";
 import { PipelineSnapshot, TaskPipeline } from "./pipeline/task-pipeline";
 import { ScheduleIndex } from "./schedule/schedule-index";
 import { TaskBase } from "./task-base";
@@ -27,6 +27,8 @@ export class TaskManager {
     private readonly _pipeline: TaskPipeline = new TaskPipeline();
     private readonly _records: Map<string, TaskRecord> = new Map();
     private readonly _types: Map<string, TaskHandler> = new Map();
+    /** 按任务 type 登记的补偿函数。不进存档。 */
+    private readonly _compensationTypes: Map<string, TaskCompensationHandler> = new Map();
 
     public get Schedule(): ScheduleIndex {
         return this._schedule;
@@ -60,13 +62,28 @@ export class TaskManager {
             this._pipeline.tasks.add(record);
             return;
         }
-        this._remember(record);
+        this._records.set(record.id, record);
+        this._pipeline.tasks.add(record);
         this._bind(record, handler);
+        this._placeRecord(record);
     }
 
     /** 按任务 type 登记处理函数。函数本身不进存档，读档后用同一 type 再绑上。 */
     public registerType(type: string, handler: TaskHandler): void {
         this._types.set(type, handler);
+    }
+
+    /**
+     * 按任务 type 登记补偿函数。正式提交仍走任务处理函数。
+     * 函数不进存档。读档后要在 rebindAndRecover 之前登记，才会绑回已恢复的任务。
+     */
+    public registerCompensation(type: string, handler: TaskCompensationHandler): void {
+        this._compensationTypes.set(type, handler);
+        for (const record of this._records.values()) {
+            if (record.type === type) {
+                this._pipeline.runtime.setCompensation(record.id, handler);
+            }
+        }
     }
 
     public bindHandler(taskId: string, handler: TaskHandler): void {
@@ -78,6 +95,10 @@ export class TaskManager {
             const typed = this._types.get(record.type);
             if (typed) {
                 this._pipeline.runtime.setHandler(record.id, typed);
+            }
+            const compensation = this._compensationTypes.get(record.type);
+            if (compensation) {
+                this._pipeline.runtime.setCompensation(record.id, compensation);
             }
         }
         this._pipeline.recoverOpen(now);
@@ -140,6 +161,7 @@ export class TaskManager {
     public reset(): void {
         this._clearState();
         this._types.clear();
+        this._compensationTypes.clear();
     }
 
     private _clearState(): void {
@@ -152,17 +174,25 @@ export class TaskManager {
     private _bind(record: TaskRecord, handler?: TaskHandler): void {
         if (handler) {
             this._pipeline.runtime.setHandler(record.id, handler);
-            return;
+        } else {
+            const typed = this._types.get(record.type);
+            if (typed) {
+                this._pipeline.runtime.setHandler(record.id, typed);
+            }
         }
-        const typed = this._types.get(record.type);
-        if (typed) {
-            this._pipeline.runtime.setHandler(record.id, typed);
+        const compensation = this._compensationTypes.get(record.type);
+        if (compensation) {
+            this._pipeline.runtime.setCompensation(record.id, compensation);
         }
     }
 
     private _remember(record: TaskRecord): void {
         this._records.set(record.id, record);
         this._pipeline.tasks.add(record);
+        this._placeRecord(record);
+    }
+
+    private _placeRecord(record: TaskRecord): void {
         const now = this._now();
         if (isTerminalLifecycle(record.lifecycleState)) {
             return;
@@ -170,10 +200,15 @@ export class TaskManager {
         if (this._schedule.schedule(record, now)) {
             return;
         }
-        // 结算时刻已过。跳过和补偿写成失效；补跑仍放回索引，取出后再执行。
+        // 结算时刻已过。跳过只失效；补偿先提交补偿变更，再失效。
         const gate = this._pipeline.startGate.check(record, now);
         if (gate.decision === "expire") {
-            record.lifecycleState = TaskLifecycleState.Expired;
+            if (record.startLatePolicy === TaskLatePolicy.Compensate) {
+                this._pipeline.compensate(record, undefined, now);
+            }
+            if (!isTerminalLifecycle(record.lifecycleState)) {
+                record.lifecycleState = TaskLifecycleState.Expired;
+            }
             return;
         }
         this._schedule.restore(record, now);

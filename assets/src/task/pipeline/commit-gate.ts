@@ -14,7 +14,13 @@ export class CommitGate {
         private readonly _ledger: IdempotencyLedger
     ) {}
 
-    public check(task: TaskRecord, execution: ExecutionRecord, changeSet: TaskChangeSet, now: number): GateResult {
+    public check(
+        task: TaskRecord,
+        execution: ExecutionRecord,
+        changeSet: TaskChangeSet,
+        now: number,
+        options?: { enforceCommitDeadline?: boolean }
+    ): GateResult {
         void execution;
         if (this._ledger.has(changeSet.idempotencyKey)) {
             return { decision: "execute", reason: "幂等命中" };
@@ -22,7 +28,7 @@ export class CommitGate {
         if (isTerminalLifecycle(task.lifecycleState)) {
             return { decision: "expire", reason: "任务已结束" };
         }
-        if (task.commitBefore !== undefined && now > task.commitBefore) {
+        if (options?.enforceCommitDeadline !== false && task.commitBefore !== undefined && now > task.commitBefore) {
             return this._lateResult(task.commitLatePolicy, "已经超过最晚提交时间");
         }
         const missingRead = this._writeWithoutRead(changeSet);

@@ -13,6 +13,7 @@ import {
     TaskCausalityPolicy,
     TaskExecutionMode,
     TaskExecutionStatus,
+    TaskLatePolicy,
     TaskLifecycleState,
     TaskOverlapPolicy,
     TaskResourceAccess,
@@ -114,7 +115,13 @@ export class TaskPipeline {
             const gate = this.startGate.check(task, now);
             if (gate.decision === "expire") {
                 // 正在等待外部结果的任务不能因为下一次排队过期而被一起取消。
-                if (this._openExecutions(task.id).length === 0) {
+                if (
+                    this._openExecutions(task.id).length === 0 &&
+                    !isTerminalLifecycle(task.lifecycleState)
+                ) {
+                    if (task.startLatePolicy === TaskLatePolicy.Compensate) {
+                        this.compensate(task, undefined, now);
+                    }
                     task.lifecycleState = TaskLifecycleState.Expired;
                 }
                 continue;
@@ -448,6 +455,9 @@ export class TaskPipeline {
                     this._openExecutions(task.id).length === 0 &&
                     !isTerminalLifecycle(task.lifecycleState)
                 ) {
+                    if (task.startLatePolicy === TaskLatePolicy.Compensate) {
+                        this.compensate(task, undefined, settleAt);
+                    }
                     task.lifecycleState = TaskLifecycleState.Expired;
                 }
                 continue;
@@ -614,6 +624,10 @@ export class TaskPipeline {
                 return this._finishSync(task, execution, settleAt);
             }
             if (gate.decision === "expire") {
+                if (gate.reason === "已经超过最晚提交时间" && task.commitLatePolicy === TaskLatePolicy.Compensate) {
+                    this.compensate(task, execution, settleAt);
+                    return "continue";
+                }
                 this.finalizer.finish(
                     task,
                     execution,
@@ -766,9 +780,10 @@ export class TaskPipeline {
                 }
                 return;
             case TaskAsyncRecoveryPolicy.Compensate:
-                this._closeExternal(task, execution, "expired");
                 if (task) {
-                    this._sealOpenExecutions(task.id, execution.executionId);
+                    this.compensate(task, execution, now);
+                } else {
+                    this._closeExternal(task, execution, "expired");
                 }
                 return;
             default: {
@@ -819,6 +834,102 @@ export class TaskPipeline {
             this.faultReason = error instanceof Error ? error.message : String(error);
             this._deadLetter(task, execution);
         }
+    }
+
+    /**
+     * 提交补偿，成功或确定没有要写的数据后再结束执行。
+     * 幂等键是「执行编号#compensate」。还没有执行记录时，用任务编号、结算时刻和 revision 拼出同一把键。
+     * 补偿函数必须同步返回。原结果若已在收件箱，结束执行后不会再被提交。
+     * 没有补偿函数时只记键并结束，不另写一笔。
+     */
+    public compensate(task: TaskRecord, execution: ExecutionRecord | undefined, now: GameTime): void {
+        const key = this._compensationKey(task, execution);
+        if (this.idempotency.has(key)) {
+            this._closeCompensated(task, execution);
+            return;
+        }
+        const handler = this.runtime.compensation(task.id);
+        if (!handler) {
+            this._rememberCompensation(key);
+            this._closeCompensated(task, execution);
+            return;
+        }
+        const carrier = this._compensationCarrier(task, execution, key);
+        let produced = handler(task, now);
+        if (produced == null) {
+            this._rememberCompensation(key);
+            this._closeCompensated(task, execution);
+            return;
+        }
+        let changeSet = this.executor.normalize(carrier, produced);
+        let gate = this.commitGate.check(task, carrier, changeSet, now, { enforceCommitDeadline: false });
+        if (gate.decision === "skip" && (gate.reason === "版本冲突" || gate.reason === "写入没有读集")) {
+            produced = handler(task, now);
+            if (produced == null) {
+                this._rememberCompensation(key);
+                this._closeCompensated(task, execution);
+                return;
+            }
+            changeSet = this.executor.normalize(carrier, produced);
+            gate = this.commitGate.check(task, carrier, changeSet, now, { enforceCommitDeadline: false });
+        }
+        if (gate.decision === "execute") {
+            this._stageCommit(task, carrier, changeSet, now, gate);
+        }
+        // 提交失败也结束执行，避免每次推进都再扣一次。失败时不记补偿键。
+        if (gate.decision === "execute" || this.idempotency.has(key)) {
+            this._closeCompensated(task, execution);
+            return;
+        }
+        this._closeCompensated(task, execution);
+    }
+
+    private _compensationKey(task: TaskRecord, execution: ExecutionRecord | undefined): string {
+        const base = execution?.idempotencyKey ?? makeExecutionId(task.id, task.nextSettleAt, task.revision);
+        return `${base}#compensate`;
+    }
+
+    private _compensationCarrier(
+        task: TaskRecord,
+        execution: ExecutionRecord | undefined,
+        key: string
+    ): ExecutionRecord {
+        const base = execution ?? {
+            executionId: makeExecutionId(task.id, task.nextSettleAt, task.revision),
+            taskId: task.id,
+            taskRevision: task.revision,
+            triggerAt: task.nextSettleAt,
+            settleIntervalFrom: task.nextSettleAt,
+            settleIntervalTo: task.nextSettleAt,
+            status: TaskExecutionStatus.Running,
+            priority: task.priority,
+            sequence: task.sequence,
+            attempt: 1,
+            acquiredResources: [],
+            readSet: {},
+            recoveryPolicy: task.asyncRecoveryPolicy,
+            idempotencyKey: key,
+        };
+        return { ...base, status: TaskExecutionStatus.Running, idempotencyKey: key };
+    }
+
+    private _rememberCompensation(key: string): void {
+        if (this.idempotency.has(key)) {
+            return;
+        }
+        this.idempotency.record(key, this.idempotency.nextCommitSequence());
+    }
+
+    /** 补偿已经处理完。关掉执行并通知依赖，使后续任务不必继续等待。 */
+    private _closeCompensated(task: TaskRecord, execution: ExecutionRecord | undefined): void {
+        if (execution && this._isOpen(execution)) {
+            this._closeExternal(task, execution, "expired");
+            this._sealOpenExecutions(task.id, execution.executionId);
+        } else if (!isTerminalLifecycle(task.lifecycleState)) {
+            task.lifecycleState = TaskLifecycleState.Expired;
+        }
+        const executionId = execution?.executionId ?? makeExecutionId(task.id, task.nextSettleAt, task.revision);
+        this.dependencies.notifyFinished(execution ?? this._compensationCarrier(task, undefined, `${executionId}#compensate`));
     }
 
     private _voidExternalOrder(execution: ExecutionRecord): void {
@@ -880,6 +991,11 @@ export class TaskPipeline {
         this._clearBarrier(execution.executionId);
     }
 
+    /**
+     * 整条任务已经失效或取消时，关掉同任务上其余还开着的执行。
+     * keepExecutionId 是调用方正在收口的那一条，这里跳过，避免终态再转一次。
+     * 不传则全部关掉。同时释放它们的资源，并拆掉对应的因果屏障。
+     */
     private _sealOpenExecutions(taskId: string, keepExecutionId: string | undefined): void {
         for (const execution of this._openExecutions(taskId)) {
             if (execution.executionId === keepExecutionId) {

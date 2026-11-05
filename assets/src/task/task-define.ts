@@ -99,6 +99,7 @@ export enum TaskLatePolicy {
     Skip = 0,
     RunLate = 1,
     CatchUp = 2,
+    /** 不执行原变更。若登记了补偿函数，先提交补偿，再结束。 */
     Compensate = 3,
 }
 
@@ -127,7 +128,7 @@ export enum TaskAsyncRecoveryPolicy {
     QueryRemote = 2,
     /** 取消这次执行和所属任务，并释放资源。 */
     Cancel = 3,
-    /** 不提交原结果。执行按过期结束，并释放资源。 */
+    /** 不提交原结果。若登记了补偿函数，先提交补偿变更，再结束执行并释放资源。 */
     Compensate = 4,
 }
 

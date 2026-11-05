@@ -21,12 +21,23 @@ import { GameTime, TaskChangeSet, TaskRecord } from "../task-contract";
  * 成功且没有要写的数据可以不带载荷。要改世界时，载荷必须带 readSet 和 commands，形状不对会使这次执行失败。
  * 真正写入发生在下一次安全点，检查规则与同步任务相同。
  * UseRecordedResult 不调用本函数，只消费事先放进收件箱的结果。
+ * 补偿不是本函数的分支。策略为 Compensate 时，引擎调用按 type 登记的补偿函数。
  */
 export type TaskHandler = (task: TaskRecord, now: GameTime) => TaskChangeSet | void;
+
+/**
+ * 补偿处理函数。只在 Compensate 时调用，必须同步返回。
+ * 读当前实体并写入新总值，幂等键由引擎定为「执行编号#compensate」。
+ * 返回空表示没有要写的数据，引擎仍会记键，避免下次再补偿一次。
+ * 不要调用 issue 或 complete，不要在这里推进时钟。
+ */
+export type TaskCompensationHandler = TaskHandler;
 
 /** 运行期处理器和序号。不放进可存档的 TaskRecord。 */
 export class TaskRuntime {
     private readonly _handlers: Map<string, TaskHandler> = new Map();
+    /** 按任务编号登记的补偿函数。不进存档。 */
+    private readonly _compensations: Map<string, TaskCompensationHandler> = new Map();
     private _sequence: number = 1;
 
     public nextSequence(): number {
@@ -54,12 +65,22 @@ export class TaskRuntime {
         return this._handlers.get(taskId);
     }
 
+    public setCompensation(taskId: string, handler: TaskCompensationHandler): void {
+        this._compensations.set(taskId, handler);
+    }
+
+    public compensation(taskId: string): TaskCompensationHandler | undefined {
+        return this._compensations.get(taskId);
+    }
+
     public remove(taskId: string): void {
         this._handlers.delete(taskId);
+        this._compensations.delete(taskId);
     }
 
     public clear(): void {
         this._handlers.clear();
+        this._compensations.clear();
         this._sequence = 1;
     }
 }

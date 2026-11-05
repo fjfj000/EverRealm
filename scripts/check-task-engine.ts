@@ -1398,6 +1398,102 @@ check("没有载荷的成功仍然完成", () => {
     assert(tasks.record("ack")?.lifecycleState === TaskLifecycleState.Completed, "无载荷成功应完成");
 });
 
+check("补偿先入账，迟到的原结果不再提交", () => {
+    const { driver, tasks } = boot(0);
+    let compensations = 0;
+    tasks.registerCompensation("scout", () => {
+        compensations += 1;
+        const version = tasks.Pipeline.entities.version("stamina");
+        const current = tasks.Pipeline.entities.value("stamina") ?? 0;
+        return {
+            executionId: "",
+            readSet: { stamina: version },
+            commands: [{ entityKey: "stamina", value: current - 1 }],
+            idempotencyKey: "",
+        };
+    });
+    tasks.addRecord(
+        taskAt("scout", 10, {
+            type: "scout",
+            executionMode: TaskExecutionMode.Async,
+            asyncRecoveryPolicy: TaskAsyncRecoveryPolicy.Compensate,
+            timeoutGameSeconds: 5,
+            causalityPolicy: TaskCausalityPolicy.Independent,
+        }),
+        () => undefined
+    );
+    driver.advanceSlice(10, BUDGET);
+    const execution = tasks.Pipeline.executions.list()[0];
+    driver.advanceSlice(20, BUDGET);
+    assert(compensations === 1, `补偿次数 ${compensations}`);
+    assert(tasks.Pipeline.entities.value("stamina") === -1, `体力 ${tasks.Pipeline.entities.value("stamina")}`);
+    assert(tasks.Pipeline.idempotency.has(`${execution.idempotencyKey}#compensate`), "应记下补偿键");
+    tasks.Pipeline.acceptExternalResult(stockResult(execution.executionId, "scout", 10));
+    driver.advanceSlice(20, BUDGET);
+    assert(tasks.Pipeline.entities.value("stock") === undefined, "原奖励不能再提交");
+    assert(compensations === 1, "关闭后不能再补偿");
+    assert(execution.status === TaskExecutionStatus.Expired, `状态 ${execution.status}`);
+});
+
+check("错过开始时间的补偿不执行原任务", () => {
+    const { driver, tasks } = boot(0);
+    let started = 0;
+    let compensations = 0;
+    tasks.registerCompensation("late", () => {
+        compensations += 1;
+        return {
+            executionId: "",
+            readSet: { wood: 0 },
+            commands: [{ entityKey: "wood", value: 3 }],
+            idempotencyKey: "",
+        };
+    });
+    tasks.addRecord(
+        taskAt("late", 100, {
+            type: "late",
+            startBefore: 50,
+            startLatePolicy: TaskLatePolicy.Compensate,
+        }),
+        () => {
+            started += 1;
+        }
+    );
+    driver.advanceSlice(100, BUDGET);
+    assert(started === 0, "原任务不应执行");
+    assert(compensations === 1, `补偿 ${compensations}`);
+    assert(tasks.Pipeline.entities.value("wood") === 3, `木头 ${tasks.Pipeline.entities.value("wood")}`);
+    assert(tasks.record("late")?.lifecycleState === TaskLifecycleState.Expired, "任务应失效");
+});
+
+check("错过提交时间先补偿，不写入原变更", () => {
+    const { driver, tasks } = boot(0);
+    tasks.registerCompensation("pay", () => ({
+        executionId: "",
+        readSet: { wood: 0 },
+        commands: [{ entityKey: "wood", value: 3 }],
+        idempotencyKey: "ignore",
+    }));
+    tasks.addRecord(
+        taskAt("pay", 10, {
+            type: "pay",
+            commitBefore: 9,
+            commitLatePolicy: TaskLatePolicy.Compensate,
+        }),
+        () => ({
+            executionId: "other",
+            readSet: { gold: 0 },
+            commands: [{ entityKey: "gold", value: 10 }],
+            idempotencyKey: "reward",
+        })
+    );
+    driver.advanceSlice(10, BUDGET);
+    assert(tasks.Pipeline.entities.value("gold") === undefined, "原金币不能入账");
+    assert(tasks.Pipeline.entities.value("wood") === 3, `补偿木头 ${tasks.Pipeline.entities.value("wood")}`);
+    const execution = tasks.Pipeline.executions.list()[0];
+    assert(tasks.Pipeline.idempotency.has(`${execution.idempotencyKey}#compensate`), "补偿键应独立");
+    assert(!tasks.Pipeline.idempotency.has("reward"), "原幂等键不能代替补偿键");
+});
+
 check("没有读集的写入会被拒绝", () => {
     const { driver, tasks } = boot(0);
     tasks.addRecord(taskAt("bare", 10), () => ({
