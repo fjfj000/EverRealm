@@ -176,7 +176,18 @@ export class WorldDriver {
         budget: AdvanceBudget = DEFAULT_ADVANCE_BUDGET
     ): AdvanceResult {
         if (this._advancing) {
-            throw new Error("不能在任务推进过程中再次推进");
+            console.error("不能在任务推进过程中再次推进");
+            return this._genAdvanceResult(
+                "faulted",
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                undefined,
+                "不能在任务推进过程中再次推进"
+            );
         }
         this._advancing = true;
         try {
@@ -189,19 +200,44 @@ export class WorldDriver {
     private _advanceSlice(targetTime: GameTime, budget: AdvanceBudget): AdvanceResult {
         if (!Number.isInteger(targetTime) || targetTime < 0) {
             console.error("目标游戏时间必须是非负整数秒", targetTime);
-            return;
+            return this._genAdvanceResult(
+                "faulted",
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                undefined,
+                "目标游戏时间必须是非负整数秒"
+            );
         }
         const clock = Instance(WorldClock) as WorldClock;
         const manager = Instance(TaskManager) as TaskManager;
         const fromTime = Math.floor(clock.TotalGameTime);
         if (targetTime < fromTime) {
             console.warn("游戏时间不能倒退", targetTime, fromTime);
-            return;
+            return this._genAdvanceResult(
+                "faulted",
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                undefined,
+                "游戏时间不能倒退"
+            );
         }
+        // 这一片已经拨过的钟。每次 moveTo 加一，用完 maxBoundariesPerSlice 就让出。
         let boundaries = 0;
+        // 这一片已经送进执行管线的到期任务条数。按取出的条数计，用完 maxExecutionsPerSlice 就让出。
         let executions = 0;
+        // 停在当前游戏秒的循环轮数。时钟前进后清零，超过 maxSameTimeRounds 就失败。
         let sameTimeRounds = 0;
+        // 停在当前游戏秒、已经送进执行管线的条数。时钟前进后清零，加上本轮取出量超过上限就失败。
         let sameTimeExecutions = 0;
+        // 同一秒各轮取出的任务编号。只在同一时刻循环失败时拼进原因。
         const triggerChain: string[] = [];
         const startedAt = Date.now();
         while (true) {
@@ -359,6 +395,30 @@ export class WorldDriver {
     }
 
     private _result(
+        status: AdvanceStatus,
+        fromTime: GameTime,
+        toTime: GameTime,
+        targetTime: GameTime,
+        processedBoundaries: number,
+        processedExecutions: number,
+        sameTimeRounds: number,
+        pendingDecisionId?: string,
+        faultReason?: string
+    ): AdvanceResult {
+        return {
+            status,
+            fromTime,
+            toTime,
+            targetTime,
+            processedBoundaries,
+            processedExecutions,
+            sameTimeRounds,
+            pendingDecisionId,
+            faultReason,
+        };
+    }
+
+    private _genAdvanceResult(
         status: AdvanceStatus,
         fromTime: GameTime,
         toTime: GameTime,
