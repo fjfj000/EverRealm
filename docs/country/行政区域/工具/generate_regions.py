@@ -12,6 +12,8 @@ from pathlib import Path
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+
+from settlement import totals as settlement_totals
 from openpyxl.utils import get_column_letter
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,6 +39,8 @@ PROFILE_FIELD = {
     "make": "make", "def": "defense", "cul": "culture", "eco": "wealth",
     "grain": "grain", "build": "build", "herd": "herd", "politics": "politics", "tech": "tech",
 }
+# 只还给要塞用：要塞仍是 1700–4000 km² 的小型防区，不随县一起放大。
+# 郡、县、乡、村的个数见 settlement，不再用这些平均面积去除国土。
 LEVEL_AREA = {"jun": 240000, "xian": 3375, "xiang": 253, "cun": 16}
 SEED = 20261016
 
@@ -203,16 +207,23 @@ def apply_peaks(parent, profile, spec):
     def area_weight(node):
         if node.kind == "要塞":
             return 0.35
+        # 京畿只是首都圈，面积必须小于任意一个郡。特色峰值留给明星郡。
+        if node.kind == "京畿":
+            return 0.45
         return area_peak if node.star else 1
 
     def pop_weight(node):
         if node.kind == "要塞":
             return 0.25
+        if node.kind == "京畿":
+            return 0.5
         return profile["popPeak"] if node.star else 1
 
     def signal_weight(node, key):
         if node.kind == "要塞":
             return metric_peak if key == "def" else 0.3
+        if node.kind == "京畿":
+            return 1.2
         return metric_peak if node.star else 1
 
     reweight(parent, "area", area_weight)
@@ -263,9 +274,12 @@ def build_country(profile, spec, grades, states):
     root.rate = standing
     root.profile = profile
 
-    capital_area = int(clamp(rng.uniform(4, 10) * LEVEL_AREA["xian"], 12000, min(area * 0.08, 42000)))
+    plan = settlement_totals(profile)
+    # 先按面积摆一版，随后 apply_peaks 会按权重重分。京畿权重低于郡，这里的初值只避免第一轮分到 0。
+    capital_area = int(round(root.area * rng.uniform(0.045, 0.07)))
+    capital_area = int(clamp(capital_area, root.area * 0.04, root.area * 0.08))
     jun_total = max(1, root.area - capital_area)
-    jun_count = int(clamp(round(jun_total / LEVEL_AREA["jun"]), 4, 6))
+    jun_count = plan["jun"]
     jun_weights = [rng.uniform(0.9, 1.1) for _ in range(jun_count)]
     jun_areas = share(jun_total, jun_weights)
     root.children = []
@@ -277,6 +291,8 @@ def build_country(profile, spec, grades, states):
     capital = Node("京畿", profile["id"] + ".jx", profile["capitalTitle"], capital_area)
     capital.terrain = "平原" if profile["bloc"] == "中原" else rng.choice(profile["terrains"])
     root.children.append(capital)
+    root.xiang_count = plan["xiang"]
+    root.cun_count = plan["cun"]
 
     # 先按面积把国级指标摊到郡和京畿，再标明星并重分配。
     for key in ("pop", "army") + VALUE_KEYS:
@@ -285,25 +301,22 @@ def build_country(profile, spec, grades, states):
     apply_peaks(root, profile, spec)
 
     for jun in [c for c in root.children if c.kind in ("郡", "京畿")]:
-        build_counties(jun, profile, spec, rng)
+        count = plan["capital_xian"] if jun.kind == "京畿" else plan["xian_per_jun"]
+        build_counties(jun, profile, spec, rng, count)
         mark_star_counties(jun, profile)
         apply_peaks(jun, profile, spec)
+        # 乡、村不展开成行，个数写在县上。每县一样多，全国合计就是 settlement 的目标。
         for county in [c for c in jun.children if c.kind == "县"]:
-            density = profile["popDensity"]
-            county.xiang_count = int(clamp(round(county.area / (LEVEL_AREA["xiang"] / max(density, 0.45))), 4, 14))
-            county.cun_count = int(clamp(round(county.area / (LEVEL_AREA["cun"] / max(density, 0.45))), 8, 80))
+            county.xiang_count = plan["xiang_per_xian"]
+            county.cun_count = plan["xiang_per_xian"] * plan["cun_per_xiang"]
     return root
 
 
-def build_counties(parent, profile, spec, rng):
-    density = max(0.45, profile["popDensity"])
-    # 人稀的地方县更大，县数更少。
-    divisor = LEVEL_AREA["xian"] / density
-    count = int(clamp(round(parent.area / divisor), 4, 16 if parent.kind == "京畿" else 22))
-    if parent.kind == "京畿":
-        count = int(clamp(count, 4, 12))
+def build_counties(parent, profile, spec, rng, count):
     weights = [rng.uniform(0.88, 1.12) for _ in range(count)]
-    areas = share(max(count, parent.area - profile["forts"] * 2000), weights)
+    # 要塞只从明星郡划出。其他郡和京畿不要预先扣掉这块面积。
+    reserve = profile["forts"] * 2000 if parent.kind == "郡" and parent.star else 0
+    areas = share(max(count, parent.area - reserve), weights)
     parent.children = []
     for i, county_area in enumerate(areas):
         node = Node("县", "{0}.{1}".format(parent.node_id, i + 1), "{0}·{1}县".format(parent.name, i + 1), max(1, county_area))
@@ -503,7 +516,7 @@ def main():
         ("东方", spec["blocs"]["东方"]),
         ("北方", spec["blocs"]["北方"]),
         ("西方", spec["blocs"]["西方"]),
-        ("乡与里村", "写在县一行的数量上，不把每个村子展开成行。明星单位用朱色底标出。"),
+        ("乡与里村", "个数按 settlement：南方 180 村、东方 200、北方与西方 220，中原昭武 240、天衡 260。每郡 2 县，京畿另 1–2 县，每县 4 乡，每乡 5 村。写在县一行上，不把每个村子展开成行。"),
     ]
     for i, (k, v) in enumerate(lines, start=3):
         intro.cell(i, 1, k).font = Font(name=ZH_FONT, bold=True, size=11, color=INK)
@@ -544,16 +557,18 @@ def main():
     write_sheet(wb, "明星聚集地", HEADERS, star_rows, WIDTHS)
 
     # 国家特征一览，方便对着表改 json。
-    feat_headers = ["国家", "方位", "特征", "兵役", "常备", "国势", "人口密度系数", "富裕", "明星", "明星倍率", "要塞", "英雄"]
+    feat_headers = ["国家", "方位", "特征", "兵役", "常备", "国势", "人口密度系数", "富裕", "明星", "明星倍率", "要塞", "英雄", "郡", "县", "乡", "里村"]
     feat_rows = []
     for country in countries:
         grade = grades[country["militarization"]]
+        plan = settlement_totals(country)
         feat_rows.append([
             country["id"] + " " + country["name"], country["bloc"], country["trait"],
             grade["name"], grade["standing"], "随世界", country["popDensity"], country["wealth"],
             country["starTitle"], country["metricPeak"], country["forts"], country["hero"],
+            plan["jun"], plan["xian"], plan["xiang"], plan["cun"],
         ])
-    write_sheet(wb, "国家特征", feat_headers, feat_rows, [14, 8, 42, 8, 10, 10, 16, 10, 12, 12, 8, 8])
+    write_sheet(wb, "国家特征", feat_headers, feat_rows, [14, 8, 42, 8, 10, 10, 16, 10, 12, 12, 8, 8, 8, 8, 8, 8])
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     wb.save(OUT_PATH)
@@ -577,6 +592,16 @@ def check(countries, roots, grades, states, spec):
             raise SystemExit("{0} 常备占比 {1:.3f}，应为 {2:.3f}".format(country["name"], army / pop, rate))
         if country["bloc"] == "中原" and abs(rate - 0.10) > 0.001:
             raise SystemExit("{0} 常备应为 10%".format(country["name"]))
+        plan = settlement_totals(country)
+        cun_total = sum(node.cun_count for node in walk(root) if node.kind == "县")
+        if cun_total != plan["cun"]:
+            raise SystemExit("{0} 村数 {1}，应为 {2}".format(country["name"], cun_total, plan["cun"]))
+        if country["bloc"] != "中原" and not 170 <= plan["cun"] <= 230:
+            raise SystemExit("{0} 是四方，村数 {1} 不在 180–220 上下".format(country["name"], plan["cun"]))
+        capitals = [node for node in root.children if node.kind == "京畿"]
+        juns = [node for node in root.children if node.kind == "郡"]
+        if capitals and juns and capitals[0].metrics["pop"] >= min(node.metrics["pop"] for node in juns):
+            raise SystemExit("{0} 京畿人口应低于每个郡".format(country["name"]))
         for node in walk(root):
             same = [k for k in getattr(node, "_siblings", []) if k.kind == node.kind]
             if len(same) < 2:
@@ -635,7 +660,15 @@ def check(countries, roots, grades, states, spec):
         raise SystemExit("四方综合战力差距过大：{0}".format({k: int(scores[k]) for k in ("南方", "东方", "北方", "西方")}))
     if not (scores["中原"] > max(four) and scores["中原"] / (sum(four) / 4) <= 1.22):
         raise SystemExit("中原综合应稍高于四方：{0}".format({k: int(v) for k, v in scores.items()}))
+    cun_of = {country["bloc"]: [] for country in countries}
+    for country in countries:
+        cun_of[country["bloc"]].append(settlement_totals(country)["cun"])
+    four_cun = [n for name in ("南方", "东方", "北方", "西方") for n in cun_of[name]]
+    if min(cun_of["中原"]) <= max(four_cun):
+        raise SystemExit("中原村数应多于四方：{0}".format(cun_of))
     print("check ok")
+    for country in countries:
+        print("{0} 村 {1}".format(country["name"], settlement_totals(country)["cun"]))
     for name in ("南方", "中原", "东方", "北方", "西方"):
         print("{0} 人口 {1:.2f}亿 面积 {2:.0f}万km2 综合 {3}".format(
             name, bloc_total(name, "pop") / 1e8, bloc_total(name, "area") / 1e4, int(scores[name])))

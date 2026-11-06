@@ -166,7 +166,7 @@ header .sub{color:var(--muted);font-size:12px;margin-top:3px}
   <div>
     <h1>行政区划编辑器</h1>
     <p class="hint" style="margin:4px 0 0">正式十国差异数据以特征目录为准，运行工具里的 generate_regions.py 导出。这里重算会按同一套兵役比例生成，明星聚集地以导出的表格为准。</p>
-    <div class="sub">以中国国土 960 万 km² 为蓝本 · 十国并行 · 先编辑国之宏观，再逐级生成、逐级编辑 · 可导入导出</div>
+    <div class="sub">国土 960 万 km² · 四方约 200 村，中原略多 · 十国并行 · 可导入导出</div>
   </div>
 </header>
 
@@ -230,12 +230,8 @@ header .sub{color:var(--muted);font-size:12px;margin-top:3px}
           <input type="number" id="areaInput" min="20000" max="3000000" step="10000" placeholder="如 940000" style="margin-top:7px;display:none">
         </div>
         <div class="field">
-          <label>生成规模（影响各级下辖数量，全区划生成时对十国统一生效）</label>
-          <div class="seg" id="scaleMode">
-            <button data-v="lite" class="on">精简</button>
-            <button data-v="std">标准</button>
-            <button data-v="full">完整</button>
-          </div>
+          <label>区划数量</label>
+          <div class="hint">按国家设计固定，不随国土面积放大。南方 180 村，东方 200，北方与西方 220，中原昭武 240、天衡 260。</div>
         </div>
         <div class="field">
           <label>地形系数（十国统一）</label>
@@ -245,7 +241,7 @@ header .sub{color:var(--muted);font-size:12px;margin-top:3px}
         </div>
         <div class="field">
           <label>京畿 / 要塞</label>
-          <label class="toggle"><input type="checkbox" id="jx" checked> 设立京畿（3–15 县）</label>
+          <label class="toggle"><input type="checkbox" id="jx" checked> 设立京畿（1–2 县，小于郡）</label>
           <label class="toggle" style="margin-top:5px"><input type="checkbox" id="ysOn" checked> 设立要塞</label>
           <div class="stepper" style="margin-top:7px">
             <button id="ysMinus" aria-label="减少要塞">减</button>
@@ -391,19 +387,20 @@ header .sub{color:var(--muted);font-size:12px;margin-top:3px}
 /* ================= 数据与规则 ================= */
 /* 与 特征/国家特征.json、兵役与国势.json 同一口径。pow 是领土权重，不是兵种 Q 合计。 */
 var COUNTRIES=[
-  {name:"G1 青岚",pow:34,forts:2,standing:0.08,popDensity:1.40,wealth:1.05,grain:0.85,culture:1.35,make:2.35,defense:0.80,build:1.05},
-  {name:"G2 苍羽",pow:32,forts:2,standing:0.10,popDensity:1.32,wealth:1.00,grain:0.82,culture:1.25,make:2.15,defense:0.90,build:1.00},
-  {name:"G3 百岭",pow:26,forts:2,standing:0.05,popDensity:2.85,wealth:2.05,grain:1.90,culture:1.05,make:1.15,defense:0.60,build:1.20},
-  {name:"G4 炽焰",pow:22,forts:2,standing:0.08,popDensity:2.55,wealth:1.70,grain:1.65,culture:0.95,make:1.25,defense:0.65,build:1.05},
-  {name:"G5 玄戈",pow:58,forts:3,standing:0.12,popDensity:0.62,wealth:0.72,grain:1.50,culture:0.65,make:0.90,defense:2.60,build:0.80},
-  {name:"G6 昆岳",pow:68,forts:3,standing:0.12,popDensity:0.45,wealth:0.65,grain:1.40,culture:0.60,make:0.80,defense:2.40,build:0.70},
-  {name:"G7 朔风",pow:56,forts:3,standing:0.11,popDensity:0.70,wealth:0.60,grain:0.50,culture:0.55,make:0.55,defense:1.90,build:0.55},
-  {name:"G8 烈庭",pow:52,forts:3,standing:0.11,popDensity:0.78,wealth:0.62,grain:0.55,culture:0.58,make:0.58,defense:1.80,build:0.58},
-  {name:"G9 天衡",pow:48,forts:2,standing:0.10,popDensity:1.15,wealth:1.12,grain:1.42,culture:2.15,make:1.08,defense:1.02,build:1.35},
-  {name:"G10 昭武",pow:42,forts:2,standing:0.10,popDensity:1.08,wealth:1.08,grain:1.35,culture:2.00,make:1.12,defense:1.08,build:1.28}
+  {name:"G1 青岚",pow:34,forts:2,standing:0.08,popDensity:1.40,wealth:1.05,grain:0.85,culture:1.35,make:2.35,defense:0.80,build:1.05,settlement:{jun:4,capitalXian:2,xianPerJun:2,xiangPerXian:4,cunPerXiang:5}},
+  {name:"G2 苍羽",pow:32,forts:2,standing:0.10,popDensity:1.32,wealth:1.00,grain:0.82,culture:1.25,make:2.15,defense:0.90,build:1.00,settlement:{jun:4,capitalXian:2,xianPerJun:2,xiangPerXian:4,cunPerXiang:5}},
+  {name:"G3 百岭",pow:26,forts:2,standing:0.05,popDensity:2.85,wealth:2.05,grain:1.90,culture:1.05,make:1.15,defense:0.60,build:1.20,settlement:{jun:4,capitalXian:1,xianPerJun:2,xiangPerXian:4,cunPerXiang:5}},
+  {name:"G4 炽焰",pow:22,forts:2,standing:0.08,popDensity:2.55,wealth:1.70,grain:1.65,culture:0.95,make:1.25,defense:0.65,build:1.05,settlement:{jun:4,capitalXian:1,xianPerJun:2,xiangPerXian:4,cunPerXiang:5}},
+  {name:"G5 玄戈",pow:58,forts:3,standing:0.12,popDensity:0.62,wealth:0.72,grain:1.50,culture:0.65,make:0.90,defense:2.60,build:0.80,settlement:{jun:5,capitalXian:1,xianPerJun:2,xiangPerXian:4,cunPerXiang:5}},
+  {name:"G6 昆岳",pow:68,forts:3,standing:0.12,popDensity:0.45,wealth:0.65,grain:1.40,culture:0.60,make:0.80,defense:2.40,build:0.70,settlement:{jun:5,capitalXian:1,xianPerJun:2,xiangPerXian:4,cunPerXiang:5}},
+  {name:"G7 朔风",pow:56,forts:3,standing:0.11,popDensity:0.70,wealth:0.60,grain:0.50,culture:0.55,make:0.55,defense:1.90,build:0.55,settlement:{jun:5,capitalXian:1,xianPerJun:2,xiangPerXian:4,cunPerXiang:5}},
+  {name:"G8 烈庭",pow:52,forts:3,standing:0.11,popDensity:0.78,wealth:0.62,grain:0.55,culture:0.58,make:0.58,defense:1.80,build:0.58,settlement:{jun:5,capitalXian:1,xianPerJun:2,xiangPerXian:4,cunPerXiang:5}},
+  {name:"G9 天衡",pow:48,forts:2,standing:0.10,popDensity:1.15,wealth:1.12,grain:1.42,culture:2.15,make:1.08,defense:1.02,build:1.35,settlement:{jun:6,capitalXian:1,xianPerJun:2,xiangPerXian:4,cunPerXiang:5}},
+  {name:"G10 昭武",pow:42,forts:2,standing:0.10,popDensity:1.08,wealth:1.08,grain:1.35,culture:2.00,make:1.12,defense:1.08,build:1.28,settlement:{jun:5,capitalXian:2,xianPerJun:2,xiangPerXian:4,cunPerXiang:5}}
 ];
 var TOTAL_POW=438, TOTAL_AREA=9600000, BASE_DENSITY=36;
-var AVG={cun:16,xiang:253,xian:3375,jun:282353};
+/* 要塞仍按这块参考面积的 0.5–1.2 倍，再夹到 1700–4000。村数不再用它去除国土。 */
+var FORT_UNIT=3375;
 
 /* 指标：顺序即 9 项；levelIdx: 0村 1乡 2县 3郡 4京畿 5要塞 */
 var CORE_NAMES={area:"面积",pop:"人数",army:"兵力",make:"制造",def:"城防",cul:"文化",eco:"经济",grain:"产粮",build:"建筑"};
@@ -431,21 +428,19 @@ function allItems(){
 function extName(k){var r="";EXT_GROUPS.forEach(function(g){g.items.forEach(function(it){if(it.k===k)r=it.n;});});return r;}
 function metricName(k){return CORE_NAMES[k]||extName(k)||k;}
 var DEFAULT_RULES={
-  area:{min:[4,40,800,100000,10000,1700],max:[40,1000,8000,600000,50000,4000]},
-  pop:{min:[500,1000,3000,15000,12000,3000],max:[1000,4000,20000,160000,80000,15000]},
-  army:{min:[25,50,150,800,600,300],max:[100,400,2000,16000,8000,8000]},
-  make:{min:[2,8,60,2500,800,40],max:[10,60,500,20000,5000,400]},
-  def:{min:[1,5,40,1500,2000,3000],max:[5,40,300,12000,10000,9000]},
-  cul:{min:[1,4,25,800,1200,15],max:[5,30,200,8000,10000,150]},
-  eco:{min:[10,50,400,15000,8000,300],max:[50,400,3000,120000,50000,2500]},
-  grain:{min:[20,100,800,30000,2000,500],max:[100,800,6000,200000,15000,4000]},
-  build:{min:[1,4,20,600,400,30],max:[5,30,200,8000,5000,250]}
+  area:{min:[1000,5000,15000,80000,20000,1700],max:[18000,90000,350000,700000,160000,4000]},
+  pop:{min:[50000,250000,1000000,2000000,700000,40000],max:[1000000,5000000,20000000,42000000,11000000,400000]},
+  army:{min:[5000,25000,100000,250000,80000,10000],max:[150000,800000,2500000,6000000,1500000,160000]},
+  make:{min:[15,70,300,600,200,20],max:[600,3000,12000,28000,8000,1500]},
+  def:{min:[15,70,300,800,400,2000],max:[250,1200,5000,12000,6000,40000]},
+  cul:{min:[8,40,150,400,250,10],max:[350,1800,7000,15000,8000,400]},
+  eco:{min:[60,300,1200,2500,800,150],max:[4000,20000,80000,180000,45000,6000]},
+  grain:{min:[100,500,2000,5000,1500,400],max:[7000,35000,140000,300000,80000,15000]},
+  build:{min:[1,5,20,40,15,10],max:[40,200,800,1600,500,400]}
 };
 EXT_GROUPS.forEach(function(g){g.items.forEach(function(it){DEFAULT_RULES[it.k]=it.r;});});
 var LVL_IDX={国:3,郡:3,县:2,乡:1,村:0,京畿:4,要塞:5};
 var LVL_NAME={3:"郡/国",2:"县",1:"乡",0:"里/村",4:"京畿",5:"要塞"};
-var CAPS={lite:{X:25,S:8,C:6},std:{X:40,S:10,C:8},full:{X:130,S:30,C:25}};
-var LEVEL_ORDER=["国","郡","京畿","要塞","县","乡","村"];
 
 var RULES=JSON.parse(JSON.stringify(DEFAULT_RULES));
 var state={country:0,fTer:1,jx:true,ysOn:true,ys:2,scale:"lite",extra:{mil:true,eco:true,civ:true,tech:false}};
@@ -471,18 +466,22 @@ function countryArea(idx){
 }
 function factor(){return state.fTer;}
 
-/* 有界切分：n 份，每份∈[min,max]，和=total（窗口不足时自动放宽保持和守恒） */
+/* 有界切分：n 份，和=total。窗口装不下时放宽上下限，不减少份数。 */
 function splitBounded(total,n,min,max){
   if(n<=0)return[];
-  n=Math.min(n,Math.floor(total/min));
-  n=Math.max(n,1);
+  n=Math.max(1,n);
+  if(max*n<total)max=total/n;
+  if(min*n>total)min=total/n;
+  if(min>max){var mid=total/n;min=mid;max=mid;}
   var vals=[];
   for(var i=0;i<n;i++){
     var left=n-i-1,rem=total-vals.reduce(function(a,b){return a+b;},0);
     var lo=Math.max(min,rem-left*max),hi=Math.min(max,rem-left*min);
-    if(hi<lo)hi=lo;
+    if(hi<lo){lo=rem/(left+1);hi=lo;}
     vals.push(lo+Math.random()*(hi-lo));
   }
+  var drift=total-vals.reduce(function(a,b){return a+b;},0);
+  if(vals.length)vals[vals.length-1]+=drift;
   return vals;
 }
 /* 软窗口下发：把 parentVal 按 children 面积占比+抖动分配，保证下级之和≈上级 */
@@ -531,9 +530,6 @@ function buildLevel(parent, childType, count, cap){
   });
   return kids;
 }
-function countFor(parentArea,avgType,capMin,capMax){
-  return clamp(Math.round(parentArea/AVG[avgType]),capMin,capMax);
-}
 function applyMacroTo(idx,root){
   allItems().forEach(function(key){
     if(key==="area"){root.m.area=countryArea(idx);return;}
@@ -556,15 +552,16 @@ function extDefaults(root){
   });});
 }
 function generate(idx){
-  var cap=CAPS[state.scale];
   var area=countryArea(idx);
-  var fac=factor();
   var root=newNode("国",String(idx),area);
   root.name=COUNTRIES[idx].name;
   root.rank=0;
 
   // 兵力只含常备。国势加征随世界变化，不写进这次生成。
+  // 郡、县、乡、村的个数来自 settlement：四方约 200 村，中原 240 与 260。
   var profile=COUNTRIES[idx];
+  var plan=profile.settlement;
+  var fac=factor();
   var pop=area*BASE_DENSITY*profile.popDensity*fac;
   root.m.pop=pop; root.m.army=pop*profile.standing;
   root.m.make=pop*0.00042*profile.make; root.m.def=pop*0.00022*profile.defense; root.m.cul=pop*0.00028*profile.culture;
@@ -572,62 +569,68 @@ function generate(idx){
   extDefaults(root);
   applyMacroTo(idx,root);
 
-  var nJ=Math.max(1,Math.round(area/AVG.jun));
-  var jMin=Math.min(RULES.area.max[3],RULES.area.min[3]*fac);
-  var jMax=Math.min(RULES.area.max[3],Math.max(RULES.area.min[3],RULES.area.max[3]*fac));
-  var junAreas=splitBounded(area,nJ,jMin,jMax);
-  var jun=junAreas.map(function(a,i){var n=newNode("郡",root.id+"."+i,Math.round(a*100)/100);n.rank=1;return n;});
-  allItems().forEach(function(key){if(key!=="area")distributeMetric(jun,root.m[key],key,3);});
-  root.children=jun;
-
+  var capitalArea=0;
   if(state.jx){
-    var mi=0;for(var k=1;k<jun.length;k++){if(jun[k].area>jun[mi].area)mi=k;}
-    var jxA=Math.min(rnd(3,15)*AVG.xian, jun[mi].area*0.5);
-    if(jxA>2500){
-      jun[mi].area=Math.round((jun[mi].area-jxA)*100)/100;
-      var jx=newNode("京畿",root.id+".jx",Math.round(jxA*100)/100);jx.rank=1;
-      allItems().forEach(function(key){if(key!=="area")jx.m[key]=jun[mi].m[key]*0.8;});
-      root.children.splice(mi,0,jx);
-    }
+    capitalArea=Math.round(area*rnd(0.045,0.07));
+    capitalArea=clamp(capitalArea,area*0.04,area*0.08);
+  }
+  var junHost={id:root.id,area:Math.max(1,area-capitalArea),m:{}};
+  allItems().forEach(function(key){
+    junHost.m[key]=key==="area"?junHost.area:root.m[key]*junHost.area/area;
+  });
+  var jun=buildLevel(junHost,"郡",plan.jun);
+  jun.forEach(function(n,i){n.rank=1;n.id=root.id+"."+i;});
+  root.children=jun;
+  if(state.jx){
+    var jx=newNode("京畿",root.id+".jx",Math.round(capitalArea));
+    jx.rank=1;
+    allItems().forEach(function(key){if(key!=="area")jx.m[key]=root.m[key]*capitalArea/area;});
+    root.children.push(jx);
   }
 
   root.children.forEach(function(node){
-    if(node.type==="京畿"){
-      node.children=buildLevel(node,"县",countFor(node.area,"xian",3,15),cap.X);
-      node.children.forEach(function(c){c.rank=2;});
-      return;
-    }
-    node.children=buildLevel(node,"县",countFor(node.area,"xian",20,cap.X),cap.X);
+    var n=node.type==="京畿"?plan.capitalXian:plan.xianPerJun;
+    node.children=buildLevel(node,"县",n);
     node.children.forEach(function(c){c.rank=2;});
   });
-
-  var firstJun=null,firstXian=null;
   root.children.forEach(function(node){
-    if(node.type==="郡"&&!firstJun)firstJun=node;
     node.children.forEach(function(x){
-      x.children=buildLevel(x,"乡",countFor(x.area,"xiang",6,cap.S),cap.S);
+      if(x.type!=="县")return;
+      x.children=buildLevel(x,"乡",plan.xiangPerXian);
       x.children.forEach(function(c){c.rank=3;});
     });
   });
-  if(state.ysOn&&firstJun&&firstJun.children.length){
-    firstXian=firstJun.children[0];
-    var ysTotal=0,ysAreas=[];
-    var fortCount=profile.forts||state.ys;
-    for(var i=0;i<fortCount;i++){var a=rnd(0.5,1.2)*AVG.xian;a=clamp(a,1700,4000);ysAreas.push(Math.round(a*100)/100);ysTotal+=ysAreas[i];}
-    var take=Math.min(ysTotal,firstXian.area*0.6);
-    var oldS=firstXian.area;
-    firstXian.area=Math.round((oldS-take)*100)/100;
-    firstXian.children=buildLevel(firstXian,"乡",countFor(firstXian.area,"xiang",4,cap.S),cap.S);
-    firstXian.children.forEach(function(c){c.rank=3;});
-    var kids=ysAreas.map(function(a,i){var n=newNode("要塞",firstXian.id+".ys"+i,a);n.rank=3;return n;});
-    allItems().forEach(function(key){if(key!=="area")distributeMetric(kids,firstXian.m[key],key,5);});
-    kids.forEach(function(k){firstXian.children.push(k);});
+
+  if(state.ysOn){
+    var firstJun=null;
+    root.children.forEach(function(node){if(node.type==="郡"&&!firstJun)firstJun=node;});
+    if(firstJun&&firstJun.children.length){
+      var firstXian=firstJun.children[0];
+      var ysTotal=0,ysAreas=[];
+      var fortCount=profile.forts||state.ys;
+      for(var i=0;i<fortCount;i++){
+        var a=rnd(0.5,1.2)*FORT_UNIT;
+        a=clamp(a,1700,4000);
+        ysAreas.push(Math.round(a*100)/100);
+        ysTotal+=ysAreas[i];
+      }
+      var take=Math.min(ysTotal,firstXian.area*0.6);
+      firstXian.area=Math.round((firstXian.area-take)*100)/100;
+      firstXian.children=buildLevel(firstXian,"乡",plan.xiangPerXian);
+      firstXian.children.forEach(function(c){c.rank=3;});
+      var kids=ysAreas.map(function(a,i){var n=newNode("要塞",firstXian.id+".ys"+i,a);n.rank=3;return n;});
+      allItems().forEach(function(key){if(key!=="area")distributeMetric(kids,firstXian.m[key],key,5);});
+      kids.forEach(function(k){firstXian.children.push(k);});
+    }
   }
 
   root.children.forEach(function(node){
     (node.children||[]).forEach(function(x){
       (x.children||[]).forEach(function(s){
-        if(s.type==="乡"){s.children=buildLevel(s,"村",countFor(s.area,"cun",4,cap.C),cap.C);s.children.forEach(function(c){c.rank=4;});}
+        if(s.type==="乡"){
+          s.children=buildLevel(s,"村",plan.cunPerXiang);
+          s.children.forEach(function(c){c.rank=4;});
+        }
       });
     });
   });
@@ -960,20 +963,30 @@ function renderNode(node,container,readonly){
 function renderAllTrees(){renderTree();renderTreePrev();}
 function rebuildChildren(node){
   if(!node.children)return;
-  var cap=CAPS[state.scale];
+  var plan=COUNTRIES[state.country].settlement;
   if(node.type==="国"){
     node.children.forEach(function(ch){
-      ch.children=buildLevel(ch,"县",countFor(ch.area,"xian",ch.type==="京畿"?3:20,cap.X),cap.X);
+      if(ch.type!=="郡"&&ch.type!=="京畿")return;
+      var n=ch.type==="京畿"?plan.capitalXian:plan.xianPerJun;
+      ch.children=buildLevel(ch,"县",n);
+      ch.children.forEach(function(c){c.rank=2;});
     });
     return;
   }
-  if(node.type==="郡"){
-    node.children.forEach(function(x){x.children=buildLevel(x,"乡",countFor(x.area,"xiang",6,cap.S),cap.S);});
+  if(node.type==="郡"||node.type==="京畿"){
+    node.children.forEach(function(x){
+      if(x.type!=="县")return;
+      x.children=buildLevel(x,"乡",plan.xiangPerXian);
+      x.children.forEach(function(c){c.rank=3;});
+    });
     return;
   }
   if(node.type==="县"){
-    node.children.forEach(function(s){if(s.type==="乡")s.children=buildLevel(s,"村",countFor(s.area,"cun",4,cap.C),cap.C);});
-    return;
+    node.children.forEach(function(s){
+      if(s.type!=="乡")return;
+      s.children=buildLevel(s,"村",plan.cunPerXiang);
+      s.children.forEach(function(c){c.rank=4;});
+    });
   }
 }
 function expandToLevel(node,minLv){
@@ -1355,7 +1368,6 @@ function bindSeg(id,key){
   });
 }
 bindSeg("fTer","fTer");
-bindSeg("scaleMode","scale");
 bindSegFn("areaMode",function(v){COUNTRY_CFG[state.country].areaMode=v;syncAreaMode();});
 function syncAreaMode(){
   var s=$("areaMode"),mode=COUNTRY_CFG[state.country].areaMode;
@@ -1386,7 +1398,7 @@ function refreshAll(){
 }
 function renderNotes(){
   $("notes").innerHTML=
-    "操作说明：① 总览页「生成全区划」会一次性生成 10 国（未编辑的国按默认战力随机生成）；② 在「国家与规模 / 国之宏观」页签选中一国，改完点「重算当前国」仅重建该国；③ 行政树可逐级折叠编辑，或切到「全量表格」一次看全所有单位的全部指标；④ 规则表可改各级 9 项指标上下限；⑤ 数据可导出 Excel / JSON，也可导入后继续编辑。&nbsp;&nbsp;"+
+    "操作说明：① 总览页「生成全区划」会按各国设计村数生成 10 国；② 在「国家与规模 / 国之宏观」页签选中一国，改完点「重算当前国」仅重建该国；③ 行政树可逐级折叠编辑，或切到「全量表格」一次看全所有单位的全部指标；④ 规则表可改各级 9 项指标上下限；⑤ 数据可导出 Excel / JSON，也可导入后继续编辑。正式差异以特征目录和导出的表格为准。&nbsp;&nbsp;"+
     "软窗口：下级之和恒等于上级（面积精确、其余近似）；当国之宏观数值超过某级窗口上限时自动放宽，避免失真。";
 }
 window.addEventListener("resize",function(){
