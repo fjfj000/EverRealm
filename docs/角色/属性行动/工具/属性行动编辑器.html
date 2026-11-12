@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>角色属性与行动</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+:root{
+  --bg:#f4efe5; --panel:#fdfbf6; --panel-2:#efe8da; --line:#ddd3bf;
+  --ink:#33303a; --muted:#857b6c; --cinnabar:#b3402a; --jade:#3f6b52; --gold:#93772f;
+  --font-title:"Songti SC","Noto Serif SC","SimSun",serif;
+  --font-body:"PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg);
+  background-image:linear-gradient(rgba(190,178,152,.20) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(190,178,152,.20) 1px,transparent 1px);
+  background-size:34px 34px;
+  color:var(--ink);font-family:var(--font-body);font-size:14px;line-height:1.5;
+}
+.wrap{max-width:1440px;margin:0 auto;padding:16px 16px 72px}
+header{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:12px}
+header h1{font-family:var(--font-title);font-weight:900;font-size:24px;margin:0;letter-spacing:1px}
+.seal{color:var(--cinnabar);font-family:var(--font-title);font-weight:700;font-size:14px;border:1px solid var(--cinnabar);padding:2px 9px;border-radius:3px;letter-spacing:2px}
+.sub{color:var(--muted);font-size:12px;margin-top:3px}
+.save-bar,.row-tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.tab-nav{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;border-bottom:1px solid var(--line);padding-bottom:10px}
+.tab-nav button,.btn{
+  background:var(--panel-2);color:var(--muted);border:1px solid var(--line);border-radius:6px;
+  padding:8px 14px;font-family:var(--font-body);font-size:13px;cursor:pointer;
+}
+.tab-nav button.on{background:var(--cinnabar);color:#fff;border-color:var(--cinnabar)}
+.btn-primary{background:var(--cinnabar);color:#fff;border-color:var(--cinnabar)}
+.btn-sm{padding:4px 8px;font-size:12px}
+.btn:focus-visible,.tab-nav button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.hint{font-size:12px;color:var(--muted);line-height:1.6}
+.dirty{color:var(--cinnabar);font-size:12px}
+.ok{color:var(--jade);font-size:12px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:12px}
+.panel h2{font-family:var(--font-title);font-size:16px;margin:0 0 8px;color:var(--gold)}
+.stage-row{display:flex;gap:8px;overflow:auto;padding-bottom:6px;margin-bottom:10px}
+.stage-card{
+  flex:0 0 168px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px 10px;
+  cursor:pointer;text-align:left;
+}
+.stage-card.on{border-color:var(--cinnabar);box-shadow:inset 0 0 0 1px var(--cinnabar)}
+.stage-card b{display:block;font-family:var(--font-title);font-size:14px}
+.stage-card span{display:block;color:var(--muted);font-size:11px;margin-top:2px}
+.stage-card i{font-style:normal;color:var(--gold);font-size:12px;display:block;max-height:4.8em;overflow:hidden}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.filters select,.filters input,input.cell-short,textarea,textarea.note{
+  background:#fff;color:var(--ink);border:1px solid var(--line);border-radius:6px;
+  padding:6px 8px;font-family:var(--font-body);font-size:13px;
+}
+.table-scroll{overflow:auto;max-height:calc(100vh - 280px);border:1px solid var(--line);border-radius:8px;background:#fff}
+table.grid{border-collapse:collapse;min-width:100%}
+table.grid th,table.grid td{border-bottom:1px solid var(--line);padding:4px;vertical-align:top;font-size:12px}
+table.grid th{position:sticky;top:0;background:var(--panel-2);color:var(--gold);z-index:2;font-weight:700;white-space:nowrap}
+table.grid tr[data-focus="个人"] td:first-child{box-shadow:inset 3px 0 0 var(--jade)}
+table.grid tr[data-focus="小队"] td:first-child{box-shadow:inset 3px 0 0 var(--gold)}
+table.grid tr[data-focus="统筹"] td:first-child{box-shadow:inset 3px 0 0 var(--cinnabar)}
+input.cell-short{width:108px;border:0;background:transparent;padding:4px}
+textarea.cell-long{width:280px;min-height:72px;border:0;resize:vertical;background:transparent;line-height:1.45}
+textarea.note{width:100%;min-height:420px;line-height:1.7}
+.curve-row{display:grid;grid-template-columns:140px 1fr;gap:8px;align-items:start;margin-bottom:8px}
+.curve-row label{color:var(--muted);padding-top:6px}
+.toast{
+  position:fixed;right:16px;bottom:16px;background:var(--ink);color:#fff;border-radius:8px;
+  padding:10px 14px;max-width:420px;white-space:pre-wrap;display:none;z-index:5;
+}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin:4px 0 8px}
+.legend b{font-weight:600}
+.mark-person{color:var(--jade)}
+.mark-party{color:var(--gold)}
+.mark-realm{color:var(--cinnabar)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="seal">角色</div>
+    <div>
+      <h1>属性与行动</h1>
+      <div class="sub">阶段只负责归类。能不能做，看每一行的动作限制和总体约束。前期是亲自做事，占城之后改为批示。</div>
+    </div>
+  </header>
+  <div class="save-bar">
+    <button id="saveBtn" class="btn btn-primary">保存并更新导表</button>
+    <button id="exportJson" class="btn">下载 JSON</button>
+    <button id="exportExcel" class="btn">下载 Excel</button>
+    <button id="importJson" class="btn">导入 JSON</button>
+    <button id="importExcel" class="btn">导入 Excel</button>
+    <button id="reloadBtn" class="btn">重新读取</button>
+    <input id="fileJson" type="file" accept="application/json,.json" hidden>
+    <input id="fileExcel" type="file" accept=".xlsx,.xls" hidden>
+    <span id="status" class="hint"></span>
+    <span id="dirtyFlag" class="dirty"></span>
+  </div>
+  <nav id="tabNav" class="tab-nav"></nav>
+  <div id="panel"></div>
+</div>
+<div id="toast" class="toast"></div>
+<script>
+/* 内存里的文档就是输入 JSON。筛选只决定画哪些行，改单元格时直接写回原行。 */
+var doc = null;
+var dirty = false;
+var canSave = false;
+var activeTab = "行动";
+var filters = {q:"", 分类:"", 阶段:"", 重心:""};
+var LONG = {
+  "动作限制":1, "约束与失败":1, "收益方式":1, "动作收益":1, "说明":1, "备注":1,
+  "加成内容":1, "练习限制":1, "进入条件":1, "掉档":1, "用在哪里":1, "每点加成":1,
+  "这段时间主要做什么":1, "规则":1, "作用":1, "从哪里来":1, "获取":1
+};
+
+function markDirty(){
+  dirty = true;
+  document.getElementById("dirtyFlag").textContent = "有未保存的修改";
+}
+
+function toast(text){
+  var el = document.getElementById("toast");
+  el.textContent = text;
+  el.style.display = "block";
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(function(){ el.style.display = "none"; }, 4200);
+}
+
+function coerce(text, previous){
+  if(typeof previous === "number"){
+    var trimmed = text.trim();
+    if(trimmed === "") return "";
+    var num = Number(trimmed);
+    if(Number.isFinite(num)) return num;
+  }
+  return text;
+}
+
+function tabNames(){
+  var names = ["说明", "经验曲线"];
+  (doc.表顺序 || []).forEach(function(name){
+    if(doc.表[name]) names.push(name);
+  });
+  Object.keys(doc.表).forEach(function(name){
+    if(names.indexOf(name) < 0) names.push(name);
+  });
+  return names;
+}
+
+function uniqueValues(rows, key){
+  var seen = [];
+  rows.forEach(function(row){
+    var value = row[key];
+    if(value && seen.indexOf(value) < 0) seen.push(value);
+  });
+  return seen;
+}
+
+function rowVisible(table, row){
+  var cols = table.列;
+  if(filters.q){
+    var blob = cols.map(function(col){ return row[col] == null ? "" : String(row[col]); }).join("\n");
+    if(blob.indexOf(filters.q.trim()) < 0) return false;
+  }
+  if(cols.indexOf("分类") >= 0 && filters.分类 && row.分类 !== filters.分类) return false;
+  if(cols.indexOf("阶段") >= 0 && filters.阶段 && row.阶段 !== filters.阶段) return false;
+  if(cols.indexOf("重心") >= 0 && filters.重心 && row.重心 !== filters.重心) return false;
+  return true;
+}
+
+function nextId(rows){
+  var prefix = "";
+  var width = 3;
+  var max = 0;
+  var found = false;
+  rows.forEach(function(row){
+    var matched = String(row.编号 || "").match(/^(\D*)(\d+)$/);
+    if(!matched) return;
+    found = true;
+    prefix = matched[1];
+    width = matched[2].length;
+    max = Math.max(max, Number(matched[2]));
+  });
+  if(!found) return "";
+  return prefix + String(max + 1).padStart(width, "0");
+}
+
+function blankRow(table){
+  var row = {};
+  table.列.forEach(function(col){ row[col] = ""; });
+  if(table.列.indexOf("编号") >= 0) row.编号 = nextId(table.行);
+  if(filters.分类 && table.列.indexOf("分类") >= 0) row.分类 = filters.分类;
+  if(filters.阶段 && table.列.indexOf("阶段") >= 0) row.阶段 = filters.阶段;
+  if(filters.重心 && table.列.indexOf("重心") >= 0) row.重心 = filters.重心;
+  return row;
+}
+
+function render(){
+  if(!doc) return;
+  renderTabs();
+  var panel = document.getElementById("panel");
+  panel.innerHTML = "";
+  if(activeTab === "说明") renderNotes(panel);
+  else if(activeTab === "经验曲线") renderCurve(panel);
+  else renderTable(panel, activeTab);
+}
+
+function renderTabs(){
+  var nav = document.getElementById("tabNav");
+  nav.innerHTML = "";
+  tabNames().forEach(function(name){
+    var btn = document.createElement("button");
+    btn.textContent = name;
+    btn.className = name === activeTab ? "on" : "";
+    btn.addEventListener("click", function(){
+      /* 分类和阶段是行动表上的筛选项，带到技能表会把行全部藏起来。 */
+      if(name !== activeTab) filters = {q:"", 分类:"", 阶段:"", 重心:""};
+      activeTab = name;
+      render();
+    });
+    nav.appendChild(btn);
+  });
+  var add = document.createElement("button");
+  add.textContent = "新表";
+  add.addEventListener("click", addTable);
+  nav.appendChild(add);
+}
+
+function renderNotes(panel){
+  var box = document.createElement("div");
+  box.className = "panel";
+  var title = document.createElement("h2");
+  title.textContent = "说明";
+  var area = document.createElement("textarea");
+  area.className = "note";
+  area.value = (doc.说明 || []).join("\n\n");
+  area.addEventListener("input", function(){
+    doc.说明 = area.value.split(/\n\s*\n/).map(function(part){ return part.trim(); }).filter(Boolean);
+    markDirty();
+  });
+  box.appendChild(title);
+  box.appendChild(area);
+  panel.appendChild(box);
+}
+
+function renderCurve(panel){
+  var box = document.createElement("div");
+  box.className = "panel";
+  var title = document.createElement("h2");
+  title.textContent = "经验曲线";
+  box.appendChild(title);
+  Object.keys(doc.经验曲线 || {}).forEach(function(key){
+    var row = document.createElement("div");
+    row.className = "curve-row";
+    var label = document.createElement("label");
+    label.textContent = key;
+    var previous = doc.经验曲线[key];
+    var field = document.createElement(String(previous).length > 24 ? "textarea" : "input");
+    field.value = previous == null ? "" : String(previous);
+    field.addEventListener("input", function(){
+      doc.经验曲线[key] = coerce(field.value, previous);
+      previous = doc.经验曲线[key];
+      markDirty();
+    });
+    row.appendChild(label);
+    row.appendChild(field);
+    box.appendChild(row);
+  });
+  panel.appendChild(box);
+}
+
+function renderTable(panel, name){
+  var table = doc.表[name];
+  if(!table){
+    panel.textContent = "没有这张表";
+    return;
+  }
+  if(name === "行动") renderLadder(panel);
+  var tools = document.createElement("div");
+  tools.className = "row-tools";
+  var search = document.createElement("input");
+  search.placeholder = "搜索";
+  search.value = filters.q;
+  search.addEventListener("input", function(){
+    filters.q = search.value;
+    render();
+    var again = document.querySelector(".row-tools input");
+    if(again){ again.focus(); again.selectionStart = again.selectionEnd = again.value.length; }
+  });
+  tools.appendChild(search);
+  addSelect(tools, "分类", table);
+  addSelect(tools, "阶段", table);
+  addSelect(tools, "重心", table);
+  var addBtn = document.createElement("button");
+  addBtn.className = "btn btn-sm";
+  addBtn.textContent = "新增一行";
+  addBtn.addEventListener("click", function(){
+    table.行.push(blankRow(table));
+    markDirty();
+    render();
+  });
+  var colBtn = document.createElement("button");
+  colBtn.className = "btn btn-sm";
+  colBtn.textContent = "新增一列";
+  colBtn.addEventListener("click", function(){ addColumn(table); });
+  tools.appendChild(addBtn);
+  tools.appendChild(colBtn);
+  panel.appendChild(tools);
+
+  if(name === "行动"){
+    var legend = document.createElement("div");
+    legend.className = "legend";
+    legend.innerHTML = "<b class='mark-person'>个人</b> 自己做 <b class='mark-party'>小队</b> 人在队里 <b class='mark-realm'>统筹</b> 批示与委任。玩家操控：否=走完即结算，是=要选择，委任=异常才回来，视战力=达到资源口径里的倍数才可以不亲自。";
+    panel.appendChild(legend);
+  }
+
+  var shown = 0;
+  table.行.forEach(function(row){ if(rowVisible(table, row)) shown += 1; });
+  var count = document.createElement("div");
+  count.className = "hint";
+  count.textContent = "显示 " + shown + " / " + table.行.length + " 行";
+  panel.appendChild(count);
+
+  var scroller = document.createElement("div");
+  scroller.className = "table-scroll";
+  var grid = document.createElement("table");
+  grid.className = "grid";
+  var thead = document.createElement("thead");
+  var headRow = document.createElement("tr");
+  table.列.forEach(function(col){
+    var th = document.createElement("th");
+    th.textContent = col;
+    headRow.appendChild(th);
+  });
+  var end = document.createElement("th");
+  end.textContent = "操作";
+  headRow.appendChild(end);
+  thead.appendChild(headRow);
+  grid.appendChild(thead);
+  var tbody = document.createElement("tbody");
+  table.行.forEach(function(row, index){
+    if(!rowVisible(table, row)) return;
+    var tr = document.createElement("tr");
+    if(row.重心) tr.dataset.focus = row.重心;
+    table.列.forEach(function(col){
+      var td = document.createElement("td");
+      var field = document.createElement(LONG[col] ? "textarea" : "input");
+      field.className = LONG[col] ? "cell-long" : "cell-short";
+      field.value = row[col] == null ? "" : String(row[col]);
+      field.addEventListener("input", function(){
+        row[col] = coerce(field.value, row[col]);
+        markDirty();
+      });
+      td.appendChild(field);
+      tr.appendChild(td);
+    });
+    var op = document.createElement("td");
+    var del = document.createElement("button");
+    del.className = "btn btn-sm";
+    del.textContent = "删除";
+    del.addEventListener("click", function(){
+      if(!confirm("删除「" + (row.行动名称 || row.技能名称 || row.名称 || row.编号 || "这一行") + "」？")) return;
+      table.行.splice(index, 1);
+      markDirty();
+      render();
+    });
+    op.appendChild(del);
+    tr.appendChild(op);
+    tbody.appendChild(tr);
+  });
+  grid.appendChild(tbody);
+  scroller.appendChild(grid);
+  panel.appendChild(scroller);
+}
+
+function addSelect(parent, key, table){
+  if(table.列.indexOf(key) < 0) return;
+  var select = document.createElement("select");
+  var all = document.createElement("option");
+  all.value = "";
+  all.textContent = "全部" + key;
+  select.appendChild(all);
+  uniqueValues(table.行, key).forEach(function(value){
+    var option = document.createElement("option");
+    option.value = value;
+    option.textContent = value;
+    select.appendChild(option);
+  });
+  select.value = filters[key] || "";
+  select.addEventListener("change", function(){
+    filters[key] = select.value;
+    render();
+  });
+  parent.appendChild(select);
+}
+
+function renderLadder(panel){
+  var stages = (doc.表.阶段 && doc.表.阶段.行) || [];
+  var actions = (doc.表.行动 && doc.表.行动.行) || [];
+  var row = document.createElement("div");
+  row.className = "stage-row";
+  stages.forEach(function(stage){
+    var count = actions.filter(function(item){ return item.阶段 === stage.编号; }).length;
+    var card = document.createElement("button");
+    card.type = "button";
+    card.className = "stage-card" + (filters.阶段 === stage.编号 ? " on" : "");
+    card.innerHTML = "<b></b><span></span><i></i>";
+    card.querySelector("b").textContent = stage.编号 + " " + stage.名称;
+    card.querySelector("span").textContent = stage.重心 + " · " + count + " 个行动";
+    card.title = stage.进入条件;
+    card.querySelector("i").textContent = stage.进入条件;
+    card.addEventListener("click", function(){
+      filters.阶段 = filters.阶段 === stage.编号 ? "" : stage.编号;
+      render();
+    });
+    row.appendChild(card);
+  });
+  panel.appendChild(row);
+}
+
+function addColumn(table){
+  var name = window.prompt("新列的名字");
+  if(!name) return;
+  name = name.trim();
+  if(!name || table.列.indexOf(name) >= 0){
+    toast("列名是空的，或已经有了");
+    return;
+  }
+  table.列.push(name);
+  table.行.forEach(function(row){
+    if(!Object.prototype.hasOwnProperty.call(row, name)) row[name] = "";
+  });
+  markDirty();
+  render();
+}
+
+function addTable(){
+  var name = window.prompt("新表的名字");
+  if(!name) return;
+  name = name.trim();
+  if(!name || doc.表[name]){
+    toast("表名是空的，或已经有了");
+    return;
+  }
+  doc.表[name] = {列:["编号", "说明"], 行:[{编号:"T001", 说明:""}]};
+  if(doc.表顺序.indexOf(name) < 0) doc.表顺序.push(name);
+  activeTab = name;
+  markDirty();
+  render();
+}
+
+async function loadDoc(){
+  try{
+    var api = await fetch("/api/data", {cache:"no-store"});
+    if(api.ok){
+      var data = await api.json();
+      if(data && data.表){
+        canSave = true;
+        return data;
+      }
+    }
+  }catch(err){}
+  var file = await fetch("../输入/属性行动.json", {cache:"no-store"});
+  if(!file.ok) throw new Error("没有读到输入文件");
+  canSave = false;
+  return file.json();
+}
+
+function setStatus(text, ok){
+  var el = document.getElementById("status");
+  el.textContent = text;
+  el.className = ok ? "ok" : "hint";
+}
+
+async function boot(){
+  try{
+    doc = await loadDoc();
+    dirty = false;
+    document.getElementById("dirtyFlag").textContent = "";
+    document.getElementById("saveBtn").textContent = canSave ? "保存并更新导表" : "下载 JSON（未连接保存服务）";
+    setStatus(canSave ? "已连接本机服务。保存会写回输入 JSON，并更新产出的 xlsx。" : "没有连上保存服务。可以编辑和下载，但不能直接写回策划目录。请运行工具里的 serve.py。", canSave);
+    render();
+  }catch(err){
+    setStatus("没有读到数据。请用 python3 serve.py 打开，或导入 JSON / Excel。");
+  }
+}
+
+async function save(){
+  if(!doc) return;
+  if(!canSave){
+    downloadJson();
+    toast("未连接保存服务，已改为下载 JSON");
+    return;
+  }
+  var res = await fetch("/api/save", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(doc)
+  });
+  var payload = await res.json().catch(function(){ return {error:"保存失败"}; });
+  if(!res.ok || !payload.ok){
+    toast(payload.error || "保存失败");
+    return;
+  }
+  dirty = false;
+  document.getElementById("dirtyFlag").textContent = "";
+  var warning = (payload.warnings || []).join("\n");
+  toast(warning ? "已更新导表\n" + warning : "已更新输入 JSON 和产出 xlsx");
+}
+
+function download(name, blob){
+  var link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = name;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+function downloadJson(){
+  download("属性行动.json", new Blob([JSON.stringify(doc, null, 2) + "\n"], {type:"application/json"}));
+}
+
+function downloadExcel(){
+  if(!window.XLSX){
+    toast("Excel 组件没加载，请联网后重试。保存服务仍可生成产出表。");
+    return;
+  }
+  var book = XLSX.utils.book_new();
+  var notes = [["说明"]].concat((doc.说明 || []).map(function(line){ return [line]; }));
+  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet(notes), "说明");
+  var curve = [["字段", "值"]].concat(Object.keys(doc.经验曲线 || {}).map(function(key){
+    return [key, doc.经验曲线[key]];
+  }));
+  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet(curve), "经验曲线");
+  tabNames().forEach(function(name){
+    if(name === "说明" || name === "经验曲线") return;
+    var table = doc.表[name];
+    var body = [table.列].concat(table.行.map(function(row){
+      return table.列.map(function(col){ return row[col] == null ? "" : row[col]; });
+    }));
+    XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet(body), name.slice(0, 31));
+  });
+  XLSX.writeFile(book, "属性行动.xlsx");
+}
+
+function adopt(data){
+  if(!data || !data.表 || !data.表顺序){
+    toast("这份数据没有表顺序");
+    return;
+  }
+  doc = data;
+  markDirty();
+  render();
+  toast("已导入。还没写回策划目录，需要再点保存。");
+}
+
+function importWorkbook(book){
+  var next = {
+    version: doc ? doc.version : 1,
+    title: doc ? doc.title : "角色属性与行动",
+    表顺序: [],
+    说明: [],
+    经验曲线: {},
+    表: {}
+  };
+  if(book.Sheets["说明"]){
+    XLSX.utils.sheet_to_json(book.Sheets["说明"], {header:1, defval:""}).forEach(function(row, index){
+      var text = String(row[0] || "").trim();
+      if(!text) return;
+      if(index === 0 && text === "说明") return;
+      next.说明.push(text);
+    });
+  }
+  if(book.Sheets["经验曲线"]){
+    XLSX.utils.sheet_to_json(book.Sheets["经验曲线"], {defval:""}).forEach(function(row){
+      if(!row.字段) return;
+      var value = row.值;
+      if(typeof value === "string" && /^-?\d+(\.\d+)?$/.test(value.trim())) value = Number(value);
+      next.经验曲线[row.字段] = value;
+    });
+  }
+  book.SheetNames.forEach(function(name){
+    if(name === "说明" || name === "经验曲线") return;
+    var records = XLSX.utils.sheet_to_json(book.Sheets[name], {defval:""});
+    var columns = records.length ? Object.keys(records[0]) : [];
+    next.表[name] = {列: columns, 行: records};
+    next.表顺序.push(name);
+  });
+  adopt(next);
+}
+
+document.getElementById("saveBtn").addEventListener("click", save);
+document.getElementById("exportJson").addEventListener("click", function(){ if(doc) downloadJson(); });
+document.getElementById("exportExcel").addEventListener("click", function(){ if(doc) downloadExcel(); });
+document.getElementById("importJson").addEventListener("click", function(){ document.getElementById("fileJson").click(); });
+document.getElementById("importExcel").addEventListener("click", function(){ document.getElementById("fileExcel").click(); });
+document.getElementById("reloadBtn").addEventListener("click", function(){
+  if(dirty && !confirm("放弃未保存的修改并重新读取？")) return;
+  boot();
+});
+document.getElementById("fileJson").addEventListener("change", function(event){
+  var file = event.target.files[0];
+  if(!file) return;
+  var reader = new FileReader();
+  reader.onload = function(){
+    try{ adopt(JSON.parse(reader.result)); }
+    catch(err){ toast("JSON 无法解析"); }
+  };
+  reader.readAsText(file, "utf-8");
+  event.target.value = "";
+});
+document.getElementById("fileExcel").addEventListener("change", function(event){
+  var file = event.target.files[0];
+  if(!file) return;
+  if(!window.XLSX){ toast("Excel 组件没加载"); return; }
+  var reader = new FileReader();
+  reader.onload = function(){
+    try{ importWorkbook(XLSX.read(reader.result, {type:"array"})); }
+    catch(err){ toast("Excel 无法解析"); }
+  };
+  reader.readAsArrayBuffer(file);
+  event.target.value = "";
+});
+window.addEventListener("beforeunload", function(event){
+  if(!dirty) return;
+  event.preventDefault();
+  event.returnValue = "";
+});
+boot();
+</script>
+</body>
+</html>
